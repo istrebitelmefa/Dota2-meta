@@ -12,8 +12,9 @@ header{padding:16px 16px 0;max-width:1100px;margin:0 auto}
 h1{font-size:20px;margin:0 0 4px}
 h1 span{color:var(--acc)}
 .sub{color:var(--mut);font-size:13px}
-nav{display:flex;gap:6px;margin:14px 0 0;border-bottom:1px solid var(--line)}
-nav button{background:none;border:0;color:var(--mut);padding:10px 14px;font-size:15px;cursor:pointer;border-bottom:2px solid transparent}
+nav{display:flex;gap:2px;margin:14px 0 0;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{white-space:nowrap;flex:0 0 auto;background:none;border:0;color:var(--mut);padding:10px 12px;font-size:15px;cursor:pointer;border-bottom:2px solid transparent}
 nav button.on{color:var(--txt);border-color:var(--acc)}
 main{max-width:1100px;margin:0 auto;padding:14px 16px 40px}
 .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
@@ -62,6 +63,22 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
 .wardlist tr{cursor:default}
 .wardlist tr.hl td{background:var(--panel2)}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:0}
+.mrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.mrow input{flex:1 1 220px;min-width:0}
+.recent{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px}
+.rm,.mp{background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:5px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;cursor:pointer;flex:0 0 auto}
+.rm img,.mp img{width:62px;height:35px;object-fit:cover;border-radius:4px}
+.mp.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.mteam{display:flex;gap:6px;flex-wrap:wrap}
+.mhead a{color:var(--mut)}
+.finds{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.find{display:flex;gap:10px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--mut);border-radius:8px;padding:10px}
+.find.bad{border-left-color:var(--bad)}.find.warn{border-left-color:var(--gold)}.find.good{border-left-color:var(--good)}
+.find .small{margin-top:3px;line-height:1.45}
+.fi{width:22px;height:22px;flex:0 0 22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:#111;background:var(--mut)}
+.find.bad .fi{background:var(--bad)}.find.warn .fi{background:var(--gold)}.find.good .fi{background:var(--good)}
+.mw{position:absolute;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;color:#111;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px rgba(0,0,0,.6);z-index:2}
+.mm{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;border:2px dashed rgba(255,255,255,.75)}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--mut);border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes s{to{transform:rotate(360deg)}}
 </style>
@@ -75,6 +92,7 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
     <button data-tab="builds">Сборки</button>
     <button data-tab="heroes">Герои патча</button>
     <button data-tab="wards">Варды</button>
+    <button data-tab="match">Разбор матча</button>
   </nav>
 </header>
 <main>
@@ -157,6 +175,13 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
       <label><input type="checkbox" id="wardHeatChk" checked> тепловая карта</label>
     </div>
     <div id="wardOut"><div class="msg">Открой вкладку, чтобы загрузить варды</div></div>
+  </section>
+
+  <section id="tab-match" hidden>
+    <div class="mrow"><input type="text" id="mId" inputmode="numeric" placeholder="Номер матча или ссылка (OpenDota / Dotabuff / Stratz)"><button class="btn" id="mGo">Разобрать</button></div>
+    <div class="mrow"><input type="text" id="mAcc" inputmode="numeric" placeholder="Твой Steam ID или Friend ID — покажу последние матчи"><button class="btn sec" id="mAccGo">Мои матчи</button></div>
+    <div id="mRecent"></div>
+    <div id="mOut"><div class="msg">Вставь номер матча или введи свой ID, чтобы выбрать из последних игр.<br>Разбор ищет типичные ошибки: смерти, проигранная линия, поздние предметы, мало вижна, быстро снятые варды.</div></div>
   </section>
 
   <div class="note">
@@ -260,7 +285,7 @@ async function loadPeriod(force=false){
     if(heroStats) heroStats.forEach(h=>{ const p=(h['7_pick']||0)+(h['8_pick']||0), w=(h['7_win']||0)+(h['8_win']||0); S.pubWR[h.id]={n:p,w}; });
     S.heroPro = {}; heroPro.forEach(r=>S.heroPro[r.hero_id]={n:+r.n,w:+r.w});
     S.duos = duos.map(r=>({carry:r.carry, sup:r.sup, n:+r.n, w:+r.w}));
-    S.duos45 = null; S.wards = {};
+    S.duos45 = null; S.wards = {}; S.posAvg = null;
     const nm = totals[0] ? totals[0].n : '?';
     const from = new Date(st*1000).toLocaleDateString('ru-RU');
     $('patchInfo').innerHTML = `Патч <b>${esc(S.patch.name)}</b> · про-матчей в выборке: <b>${nm}</b> · с ${from} · обновлено ${new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}`;
@@ -365,6 +390,14 @@ function itemTile(r, extra=''){
     <div class="t">${extra}</div></div>`;
 }
 
+const heroItemRows = (id, st) => sql(`SELECT x.k, count(*) n, sum(x.win) w, avg(x.t)::int t, sum((x.t<=0)::int) s FROM (
+               SELECT p.match_id, e->>'key' k, min((e->>'time')::int) t, max(((p.player_slot<128)=m.radiant_win)::int) win
+               FROM player_matches p JOIN matches m ON m.match_id=p.match_id
+               CROSS JOIN LATERAL jsonb_array_elements(p.purchase_log::jsonb) e
+               WHERE m.start_time>=${st} AND p.hero_id=${id} GROUP BY 1,2) x
+             GROUP BY 1 ORDER BY n DESC LIMIT 120`);
+const heroItemBase = (id, st) => sql(`SELECT count(*) n, sum(((p.player_slot<128)=m.radiant_win)::int) w FROM player_matches p JOIN matches m ON m.match_id=p.match_id
+             WHERE m.start_time>=${st} AND p.hero_id=${id} AND p.purchase_log IS NOT NULL`);
 let buildToken=0;
 async function loadBuild(){
   const id=+$('buildHero').value; if(!id){ $('buildOut').innerHTML='<div class="msg">Выбери героя</div>'; return; }
@@ -374,14 +407,7 @@ async function loadBuild(){
     let mode='timeline', rows, base;
     try{
       [rows, base] = await Promise.all([
-        sql(`SELECT x.k, count(*) n, sum(x.win) w, avg(x.t)::int t, sum((x.t<=0)::int) s FROM (
-               SELECT p.match_id, e->>'key' k, min((e->>'time')::int) t, max(((p.player_slot<128)=m.radiant_win)::int) win
-               FROM player_matches p JOIN matches m ON m.match_id=p.match_id
-               CROSS JOIN LATERAL jsonb_array_elements(p.purchase_log::jsonb) e
-               WHERE m.start_time>=${st} AND p.hero_id=${id} GROUP BY 1,2) x
-             GROUP BY 1 ORDER BY n DESC LIMIT 120`),
-        sql(`SELECT count(*) n, sum(((p.player_slot<128)=m.radiant_win)::int) w FROM player_matches p JOIN matches m ON m.match_id=p.match_id
-             WHERE m.start_time>=${st} AND p.hero_id=${id} AND p.purchase_log IS NOT NULL`)
+        heroItemRows(id, st), heroItemBase(id, st)
       ]);
       if(!rows.length || !+base[0].n) throw new Error('empty');
     }catch(e){
@@ -459,6 +485,17 @@ async function loadWards(force=false){
   const tok=++wardToken;
   $('wardOut').innerHTML='<div class="msg"><span class="spin"></span>Собираю '+(type==='obs'?'observer':'sentry')+'-варды из про-матчей…</div>';
   try{
+    await fetchWardData(type, force);
+    if(tok!==wardToken) return;
+    renderWards();
+  }catch(e){ if(tok===wardToken) $('wardOut').innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
+}
+const wardPending = {};
+function fetchWardData(type, force=false){
+  if(S.wards[type] && !force) return Promise.resolve(S.wards[type]);
+  if(wardPending[type] && !force) return wardPending[type];
+  const st=periodStart();
+  const pr = (async()=>{
     const [rows, tot] = await Promise.all([
       sql(`WITH mm AS (SELECT match_id, radiant_win FROM matches WHERE start_time>=${st} ORDER BY match_id DESC LIMIT 3000)
         SELECT (pm.player_slot<128)::int rad,
@@ -472,10 +509,12 @@ async function loadWards(force=false){
       sql(`SELECT count(DISTINCT pm.match_id) n FROM (SELECT match_id FROM matches WHERE start_time>=${st} ORDER BY match_id DESC LIMIT 3000) mm
            JOIN player_matches pm ON pm.match_id=mm.match_id WHERE pm.${type}_log IS NOT NULL`, !force)
     ]);
-    if(tok!==wardToken) return;
     S.wards[type] = {rows: rows.map(r=>({rad:+r.rad, tb:+r.tb, x:+r.x, y:+r.y, n:+r.n, w:+r.w, ts:+r.ts})), games: +(tot[0]&&tot[0].n)||0};
-    renderWards();
-  }catch(e){ if(tok===wardToken) $('wardOut').innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
+    return S.wards[type];
+  })();
+  wardPending[type] = pr;
+  pr.finally(()=>{ if(wardPending[type]===pr) delete wardPending[type]; });
+  return pr;
 }
 
 // жадная кластеризация: берём самую плотную клетку, собираем соседей в радиусе R, центр — средневзвешенный
@@ -564,10 +603,279 @@ $('wardOut').addEventListener('mouseover', e=>{
   document.querySelectorAll('#wardOut [data-i]').forEach(x=>x.classList.toggle('hl', x.dataset.i===i));
 });
 
+// ---------- разбор матча ----------
+// Данные — /matches/{id} OpenDota (распарсенный реплей). Нераспарсенный матч можно отправить на парсинг: POST /request/{id}.
+const OBS_LIFE = 360;
+let matchToken=0, M=null;
+
+function parseMatchInput(v){
+  v=String(v).trim();
+  const m = v.match(/matches?\/(\d{6,})/) || v.match(/^(\d{6,})$/);
+  return m ? m[1] : null;
+}
+function parseAccount(v){
+  v=String(v).trim(); const m=v.match(/(\d{5,})/); if(!m) return null;
+  let n=BigInt(m[1]); const base=76561197960265728n; if(n>base) n-=base; return String(n);
+}
+
+async function loadRecent(){
+  const acc=parseAccount($('mAcc').value); if(!acc){ $('mRecent').innerHTML='<div class="small b">Не похоже на Steam ID / Friend ID.</div>'; return; }
+  try{ localStorage.setItem('dm_acc', $('mAcc').value.trim()); }catch(e){}
+  $('mRecent').innerHTML='<div class="msg"><span class="spin"></span>Загружаю последние матчи…</div>';
+  try{
+    const list = await getJSON('players/'+acc+'/recentMatches', false);
+    if(!list.length){ $('mRecent').innerHTML='<div class="small">Матчей нет. Возможно, профиль скрыт: включи «Expose Public Match Data» в настройках Dota 2.</div>'; return; }
+    $('mRecent').innerHTML = '<div class="recent">'+list.slice(0,20).map(r=>{ const win=(r.player_slot<128)===r.radiant_win;
+      return `<button class="rm" data-mid="${r.match_id}" data-acc="${acc}"><img src="${heroImg(r.hero_id)}" alt=""><span class="${win?'g':'b'}">${win?'П':'Пор'}</span>
+        <span>${r.kills}/${r.deaths}/${r.assists}</span><span class="small">${new Date(r.start_time*1000).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'})}${r.version?'':' · не разобран'}</span></button>`; }).join('')+'</div>';
+  }catch(e){ $('mRecent').innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
+}
+
+async function loadMatch(id, acc){
+  const tok=++matchToken;
+  $('mOut').innerHTML='<div class="msg"><span class="spin"></span>Загружаю матч '+esc(id)+'…</div>';
+  try{
+    let m = cacheGet('matches/'+id);
+    if(!m){ m = await getJSON('matches/'+id, false); if(isParsed(m)) cacheSet('matches/'+id, m); }
+    if(tok!==matchToken) return;
+    if(!m || !m.players) throw new Error('Матч не найден');
+    M = {m, sel:null};
+    let idx = acc ? m.players.findIndex(p=>String(p.account_id)===String(acc)) : -1;
+    if(idx<0) idx=0;
+    M.sel = idx;
+    renderMatch();
+  }catch(e){ if(tok===matchToken) $('mOut').innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
+}
+const isParsed = m => m && m.players && m.players.some(p=>Array.isArray(p.gold_t) && p.gold_t.length);
+
+async function requestParse(id){
+  const box=$('parseBox'); if(!box) return;
+  box.innerHTML='<span class="spin"></span>Отправляю реплей на разбор в OpenDota…';
+  try{
+    const r = await fetch(API+'request/'+id, {method:'POST'});
+    if(!r.ok) throw new Error('OpenDota ответил '+r.status);
+    const d = await r.json(); const job = d && d.job && d.job.jobId;
+    const t0=Date.now();
+    while(Date.now()-t0 < 5*60e3){
+      await new Promise(res=>setTimeout(res, 6000));
+      if(!$('parseBox')) return;
+      box.innerHTML='<span class="spin"></span>Разбор идёт… '+Math.round((Date.now()-t0)/1000)+' с (обычно 1–3 минуты)';
+      if(job){ const j = await fetch(API+'request/'+job).then(r=>r.json()).catch(()=>({})); if(j && j.jobId) continue; }
+      const m = await getJSON('matches/'+id, false).catch(()=>null);
+      if(isParsed(m)){ cacheSet('matches/'+id, m); M.m=m; renderMatch(); return; }
+    }
+    box.innerHTML='Разбор не успел за 5 минут. Попробуй открыть матч ещё раз позже.';
+  }catch(e){ box.innerHTML='<span class="b">'+esc(e.message)+'</span>'; }
+}
+
+// позиции 1–5: по GPM внутри команды, две самые бедные — 5 и 4, у корок — по линии
+function positions(m){
+  const pos={};
+  [true,false].forEach(rad=>{
+    const team=m.players.filter(p=>(p.player_slot<128)===rad).sort((a,b)=>(b.gold_per_min||0)-(a.gold_per_min||0));
+    if(team.length<5) return;
+    pos[team[4].player_slot]=5; pos[team[3].player_slot]=4;
+    const cores=team.slice(0,3), left=[1,2,3];
+    const want = p => p.lane_role===2 ? 2 : p.lane_role===3 ? 3 : p.lane_role===1 ? 1 : 0;
+    cores.forEach(p=>{ const w=want(p); if(w && left.includes(w)){ pos[p.player_slot]=w; left.splice(left.indexOf(w),1); } });
+    cores.forEach(p=>{ if(!pos[p.player_slot]) pos[p.player_slot]=left.shift(); });
+  });
+  return pos;
+}
+
+// средние значения про-игроков по позициям (5 — rk1, 4 — rk2, корки — rk3..5) за текущий период
+async function fetchPosAvg(){
+  if(S.posAvg) return S.posAvg;
+  const st=periodStart();
+  const rows = await sql(`WITH p AS (
+      SELECT m.duration d, pm.deaths, jsonb_array_length(pm.obs_log::jsonb) o, jsonb_array_length(coalesce(pm.sen_log::jsonb,'[]'::jsonb)) s,
+             row_number() OVER (PARTITION BY pm.match_id, (pm.player_slot<128) ORDER BY pm.gold_per_min ASC, pm.player_slot) rk
+      FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
+      WHERE m.start_time>=${st} AND m.duration>900 AND pm.obs_log IS NOT NULL)
+    SELECT rk, count(*) n, avg(o*600.0/d) o10, avg(s*600.0/d) s10, avg(deaths*600.0/d) d10 FROM p GROUP BY rk ORDER BY rk`);
+  S.posAvg = {};
+  rows.forEach(r=>{ S.posAvg[+r.rk]={o10:+r.o10, s10:+r.s10, d10:+r.d10, n:+r.n}; });
+  return S.posAvg;
+}
+const posRk = pos => pos===5?1 : pos===4?2 : null;
+
+function renderMatch(){
+  const m=M.m, parsed=isParsed(m), pos=positions(m);
+  const radWin=m.radiant_win;
+  const teamRow = rad => m.players.filter(p=>(p.player_slot<128)===rad).map(p=>{ const i=m.players.indexOf(p);
+    return `<button class="mp${i===M.sel?' on':''}" data-pi="${i}" title="${esc(p.personaname||'Аноним')}"><img src="${heroImg(p.hero_id)}" alt="">
+      <span class="small">${pos[p.player_slot]?'поз. '+pos[p.player_slot]:''}</span><span class="small">${p.kills}/${p.deaths}/${p.assists}</span></button>`; }).join('');
+  const rk=(m.radiant_score!=null)?`${m.radiant_score} : ${m.dire_score}`:'';
+  let html = `<div class="card"><div class="mhead"><b>Матч ${m.match_id}</b> · ${fmtTime(m.duration)} · ${new Date(m.start_time*1000).toLocaleDateString('ru-RU')}
+      · победа <b class="${radWin?'g':'b'}">${radWin?'Света':'Тьмы'}</b> ${rk?'· '+rk:''}
+      · <a href="https://www.opendota.com/matches/${m.match_id}" target="_blank" rel="noopener">OpenDota</a></div>
+    <div class="small" style="margin:8px 0 4px">Свет</div><div class="mteam">${teamRow(true)}</div>
+    <div class="small" style="margin:8px 0 4px">Тьма</div><div class="mteam">${teamRow(false)}</div>
+    <div class="small" style="margin-top:6px">Нажми на героя, чтобы разобрать его игру.</div></div>`;
+  if(!parsed){
+    html += `<div class="card" style="margin-top:10px"><b>Реплей ещё не разобран.</b> Без разбора нет таймингов смертей, покупок, вардов и золота по минутам.
+      <div id="parseBox" style="margin-top:8px"><button class="btn" id="parseBtn">Запросить разбор реплея</button>
+      <div class="small" style="margin-top:6px">OpenDota скачает реплей и разберёт его (1–3 мин). Реплеи хранятся у Valve примерно 2 недели — старые матчи разобрать уже нельзя.</div></div></div>`;
+  }
+  html += '<div id="mAnalysis"></div>';
+  $('mOut').innerHTML = html;
+  if(parsed) analyzePlayer();
+}
+
+async function analyzePlayer(){
+  const m=M.m, p=m.players[M.sel], pos=positions(m)[p.player_slot], tok=matchToken, rad=p.player_slot<128;
+  const out=$('mAnalysis');
+  out.innerHTML='<div class="msg"><span class="spin"></span>Сравниваю с про-игроками…</div>';
+  const [items, base, posAvg, wardData] = await Promise.all([
+    heroItemRows(p.hero_id, periodStart()).catch(()=>[]), heroItemBase(p.hero_id, periodStart()).catch(()=>[{n:0}]),
+    fetchPosAvg().catch(()=>null), (pos>=4 ? fetchWardData('obs').catch(()=>null) : Promise.resolve(null))
+  ]);
+  if(tok!==matchToken || m!==M.m || p!==M.m.players[M.sel]) return;
+  const dur=m.duration, min=dur/60, F=[]; // {lvl:'bad'|'warn'|'good', t, d}
+  const add=(lvl,t,d)=>F.push({lvl,t,d});
+  const isSup = pos>=4, pa = posAvg && posRk(pos) ? posAvg[posRk(pos)] : (posAvg ? avgCores(posAvg) : null);
+
+  // --- смерти
+  const heroKey = S.heroes[p.hero_id] && S.heroes[p.hero_id].name;
+  const deaths=[];
+  m.players.filter(e=>(e.player_slot<128)!==rad).forEach(e=>(e.kills_log||[]).forEach(k=>{ if(k.key===heroKey) deaths.push({t:k.time, by:e.hero_id}); }));
+  deaths.sort((a,b)=>a.t-b.t);
+  const d10=p.deaths*600/dur, early=deaths.filter(d=>d.t<600).length;
+  if(pa && p.deaths>=4 && d10>pa.d10*1.5) add('bad','Слишком много смертей',`Смертей: ${p.deaths} — ${d10.toFixed(1)} за 10 минут, у про на ${pos}-й позиции в среднем ${pa.d10.toFixed(1)}. Каждая смерть — потерянное золото, опыт и время на карте.`);
+  else if(pa && d10<=pa.d10*0.8) add('good','Мало смертей',`Смертей: ${p.deaths} — меньше, чем в среднем у про на этой позиции (${(pa.d10*min/10).toFixed(1)} за такую игру).`);
+  if(early>=2) add(early>=3?'bad':'warn','Смерти на линии',`Смертей до 10-й минуты: ${early} (${deaths.filter(d=>d.t<600).slice(0,6).map(d=>fmtTime(d.t)).join(', ')}). Следи за миникартой, не заходи вперёд без вижна, держи ТП для отхода.`);
+  const streak=[]; for(let i=1;i<deaths.length;i++) if(deaths[i].t-deaths[i-1].t<150) streak.push(deaths[i]);
+  if(streak.length>=2) add('warn','Смерти подряд',`Несколько раз умирал с перерывом меньше 2,5 минут (${streak.slice(0,6).map(d=>fmtTime(d.t)).join(', ')}${streak.length>6?'…':''}). После смерти не спеши обратно в ту же зону — враги ещё рядом.`);
+  const dead = p.life_state_dead;
+  if(dead && dead/dur>0.15) add('warn','Долго мёртв',`Провёл мёртвым ${fmtTime(dead)} — ${Math.round(100*dead/dur)}% игры.`);
+
+  // --- линия (0–10 мин)
+  const at = (arr,i) => arr && arr.length ? arr[Math.min(i, arr.length-1)] : 0;
+  if(p.lane && dur>660){
+    const mates=m.players.filter(e=>(e.player_slot<128)===rad && e.lane===p.lane), foes=m.players.filter(e=>(e.player_slot<128)!==rad && e.lane===p.lane);
+    if(foes.length){
+      const nw = arr => arr.reduce((a,e)=>a+at(e.gold_t,10)+at(e.xp_t,10),0);
+      const diff = nw(mates)-nw(foes), rel=diff/Math.max(1,nw(foes));
+      const ln = p.lane_role===2?'твой мид':p.lane_role===1?'ваша лёгкая линия':p.lane_role===3?'ваша сложная линия':'ваша линия';
+      if(rel<-0.15) add(rel<-0.3?'bad':'warn','Проигранная линия',`К 10-й минуте ${ln} отстаёт по золоту+опыту на ${Math.abs(Math.round(diff))} (${Math.round(rel*100)}%) против ${foes.map(f=>heroName(f.hero_id)).join(', ')}.`+(isSup?' Саппорту на линии важно харасить, контролировать лайн-пулл и не давать врагу добивать.':' Подумай о другом стартовом закупе или запроси ротацию/смену линии.'));
+      else if(rel>0.15) add('good','Выигранная линия',`К 10-й минуте ${ln} впереди на ${Math.round(diff)} золота+опыта (+${Math.round(rel*100)}%).`);
+    }
+  }
+  if(!isSup && p.lh_t && p.lh_t.length>10){
+    const lh10=p.lh_t[10], eff=p.lane_efficiency_pct;
+    if(eff!=null && eff<55) add(eff<40?'bad':'warn','Слабый фарм на линии',`Эффективность линии ${eff}% , ${lh10} добиваний к 10-й минуте. Хороший ориентир для корки — 50+ к 10 минуте (керри — 60–70).`);
+    else if(lh10>=60) add('good','Отличный фарм на линии',`${lh10} добиваний к 10-й минуте.`);
+  }
+
+  // --- бенчмарки фарма/урона
+  const B=p.benchmarks||{};
+  if(!isSup && B.gold_per_min && B.gold_per_min.pct!=null){
+    const pc=Math.round(B.gold_per_min.pct*100);
+    if(pc<30) add('warn','Мало золота',`GPM ${p.gold_per_min} — хуже, чем у ${100-pc}% игроков на этом герое. Больше фарми лес между волнами, не стой без дела.`);
+    else if(pc>=75) add('good','Хороший фарм',`GPM ${p.gold_per_min} — лучше, чем у ${pc}% игроков на этом герое.`);
+  }
+  if(B.hero_damage_per_min && B.hero_damage_per_min.pct!=null && B.hero_damage_per_min.pct<0.2 && dur>1200)
+    add('warn','Мало урона по героям',`Урон по героям хуже, чем у ${Math.round(100-B.hero_damage_per_min.pct*100)}% игроков на этом герое.`);
+
+  // --- драки
+  const tf=p.teamfight_participation;
+  if(tf!=null && dur>1200){
+    if(tf<0.45) add(tf<0.3?'bad':'warn','Мало участия в драках',`Участвовал в ${Math.round(tf*100)}% убийств команды. ${isSup?'Саппорт должен быть рядом с командой в драках и смоках.':'Не отрывайся от команды надолго, когда она дерётся.'}`);
+    else if(tf>=0.7) add('good','Активен в драках',`Участие в ${Math.round(tf*100)}% убийств команды.`);
+  }
+
+  // --- предметы vs про
+  const G=+(base[0]&&base[0].n)||0, my={};
+  (p.purchase_log||[]).forEach(e=>{ if(my[e.key]==null) my[e.key]=e.time; });
+  const late=[], fast=[];
+  if(G>=8) items.forEach(r=>{ r.n=+r.n; r.t=+r.t;
+    if(!isBuildItem(r.k) || r.n<Math.max(5,G*0.15) || (S.items[r.k].cost||0)<1400 || my[r.k]==null) return;
+    const dt=my[r.k]-r.t; if(dt>300) late.push({k:r.k, dt, my:my[r.k], pro:r.t}); else if(dt<-120) fast.push({k:r.k, dt, my:my[r.k], pro:r.t}); });
+  late.sort((a,b)=>b.dt-a.dt);
+  if(late.length) add(late[0].dt>600?'bad':'warn','Поздние предметы', late.slice(0,4).map(x=>`${esc(itemName(x.k))} — ${fmtTime(x.my)} (у про ~${fmtTime(x.pro)})`).join('; ')+'. Опаздывающие ключевые предметы часто значат, что не хватает фарма или закуп был не по порядку.');
+  if(fast.length) add('good','Быстрые предметы', fast.slice(0,3).map(x=>`${esc(itemName(x.k))} — ${fmtTime(x.my)} (у про ~${fmtTime(x.pro)})`).join('; ')+'.');
+  const tp = (p.purchase && p.purchase.tpscroll) || 0;
+  if(dur>1500 && tp<Math.floor(min/12)) add('warn','Мало свитков телепорта',`Куплено ТП: ${tp} за ${Math.round(min)} мин. ТП в слоте — это спасённые вышки и вовремя пришедший на драку герой.`);
+
+  // --- вижн (для 4/5)
+  let wardsHtml='';
+  if(isSup){
+    const obs=p.obs_log||[], sen=p.sen_log||[], o10=obs.length*600/dur, s10=sen.length*600/dur;
+    if(pa){
+      if(o10<pa.o10*0.6) add(o10<pa.o10*0.4?'bad':'warn','Мало обзора',`Поставлено ${obs.length} observer — ${o10.toFixed(1)} за 10 мин, у про на ${pos}-ке в среднем ${pa.o10.toFixed(1)}. Покупай варды каждый раз, когда они есть в лавке.`);
+      else if(o10>=pa.o10*0.95) add('good','Достаточно обзора',`${obs.length} observer — на уровне про (${o10.toFixed(1)} за 10 мин при среднем ${pa.o10.toFixed(1)}).`);
+      if(s10<pa.s10*0.5) add('warn','Мало сентри',`Поставлено ${sen.length} sentry (у про ${pa.s10.toFixed(1)} за 10 мин против твоих ${s10.toFixed(1)}). Сентри снимают вражеские варды и защищают твои.`);
+    }
+    // время жизни observer'ов
+    const left={}; (p.obs_left_log||[]).forEach(l=>{ if(l.ehandle!=null) left[l.ehandle]=l; });
+    const wards = obs.map(o=>{ const l=o.ehandle!=null?left[o.ehandle]:null; const life=l?l.time-o.time:null;
+      return {x:o.x, y:o.y, t:o.time, life, killed: life!=null && life<OBS_LIFE-5}; });
+    const known = wards.filter(w=>w.life!=null), quick = known.filter(w=>w.life<120);
+    if(known.length>=4 && quick.length/known.length>0.35) add('warn','Варды быстро снимают',`${quick.length} из ${known.length} observer'ов прожили меньше 2 минут. Похоже, места слишком очевидные — посмотри метовые точки во вкладке «Варды» или ставь на возвышенности сбоку от популярных мест.`);
+    else if(known.length>=4 && quick.length/known.length<0.15) add('good','Варды живут долго',`Только ${quick.length} из ${known.length} observer'ов сняли быстрее 2 минут.`);
+    // сравнение с метовыми точками
+    let meta=[];
+    if(wardData){
+      const cells=wardData.rows.filter(r=>r.rad===(rad?1:0)).map(r=>({...r}));
+      meta = clusterWards(cells).slice(0,30);
+      wards.forEach(w=>{ w.meta = meta.some(c=>Math.hypot(c.x-w.x,c.y-w.y)<=4); });
+      if(wards.length>=5){ const share=wards.filter(w=>w.meta).length/wards.length;
+        if(share<0.35) add('warn','Нестандартные места вардов',`Только ${Math.round(share*100)}% твоих observer'ов стоят в топ-30 метовых точках про-игроков. Нестандартные варды бывают полезны, но чаще дают меньше информации.`);
+        else if(share>=0.6) add('good','Метовые варды',`${Math.round(share*100)}% observer'ов поставлены в популярные у про точки.`); }
+    }
+    if(p.camps_stacked!=null && dur>1500 && p.camps_stacked===0) add('warn','Нет стаков',`За игру ни одного стака. Стак на :53 для керри или мида — один из самых выгодных способов помочь команде.`);
+    if(wards.length){
+      const dots = wards.map((w,i)=>{ const q=toUV(w.x,w.y); const c = w.life==null?'#ccc':w.life<120?'var(--bad)':w.killed?'var(--gold)':'var(--good)';
+        return `<div class="mw" style="left:${(q.u*100).toFixed(2)}%;top:${(q.v*100).toFixed(2)}%;background:${c}" title="${fmtTime(w.t)} · ${w.life==null?'?':'прожил '+fmtTime(w.life)}${w.meta?' · метовая точка':''}">${i+1}</div>`; }).join('');
+      const metaDots = meta.map(c=>{ const q=toUV(c.x,c.y); return `<div class="mm" style="left:${(q.u*100).toFixed(2)}%;top:${(q.v*100).toFixed(2)}%"></div>`; }).join('');
+      wardsHtml = `<div class="sec-h">Твои observer-варды</div>
+        <div class="wardwrap"><div class="map" style="width:min(100%,520px)">${metaDots}${dots}</div>
+        <div class="small" style="flex:1 1 220px;line-height:1.7">
+          <span class="dot" style="background:var(--good)"></span>простоял все 6 минут<br>
+          <span class="dot" style="background:var(--gold)"></span>сняли позже 2 минут<br>
+          <span class="dot" style="background:var(--bad)"></span>сняли быстрее 2 минут<br>
+          ${meta.length?'<span class="dot" style="background:transparent;border:2px dashed #fff"></span>топ-30 метовых точек про (твоя сторона)<br>':''}
+          Цифра — порядок установки. Нажми/наведи на вард, чтобы увидеть время.</div></div>`;
+    }
+  }
+
+  // --- вывод
+  const order={bad:0,warn:1,good:2};
+  F.sort((a,b)=>order[a.lvl]-order[b.lvl]);
+  const nb=F.filter(f=>f.lvl==='bad').length, nw=F.filter(f=>f.lvl==='warn').length, ng=F.filter(f=>f.lvl==='good').length;
+  const ic={bad:'✖',warn:'!',good:'✔'};
+  const win=(p.player_slot<128)===m.radiant_win;
+  let html = `<div class="card hsel" style="margin-top:10px"><img src="${heroImg(p.hero_id)}" alt=""><div>
+      <div style="font-size:18px;font-weight:600">${esc(heroName(p.hero_id))} <span class="small">${esc(p.personaname||'')}</span></div>
+      <div class="small">Позиция ${pos||'?'} · <b class="${win?'g':'b'}">${win?'победа':'поражение'}</b> · ${p.kills}/${p.deaths}/${p.assists} · GPM ${p.gold_per_min} · XPM ${p.xp_per_min} · добиваний ${p.last_hits}/${p.denies}</div>
+      <div class="small">Найдено: <b class="b">${nb} серьёзных</b>, <b style="color:var(--gold)">${nw} замечаний</b>, <b class="g">${ng} плюсов</b></div></div></div>`;
+  html += F.length ? '<div class="finds">'+F.map(f=>`<div class="find ${f.lvl}"><div class="fi">${ic[f.lvl]}</div><div><b>${f.t}</b><div class="small">${f.d}</div></div></div>`).join('')+'</div>'
+                   : '<div class="msg">Явных ошибок не нашёл.</div>';
+  if(deaths.length) html += `<div class="sec-h">Смерти от героев</div><div class="items">`+deaths.map(d=>`<div class="item"><img src="${heroImg(d.by)}" alt="">${fmtTime(d.t)}<div class="t">${esc(heroName(d.by))}</div></div>`).join('')+'</div>';
+  html += wardsHtml;
+  html += `<div class="note">Разбор автоматический: сравнение с про-матчами текущего патча (средние по позиции, тайминги предметов на этом герое) и процентилями OpenDota.
+    Это подсказки, а не приговор: поздний предмет может быть оправдан ходом игры, а смерть — удачным разменом.
+    ${posAvg?'':'Средние по позициям не загрузились — часть проверок пропущена.'} ${G<8?'Мало про-игр на этом герое — тайминги предметов не сравнивались.':''}</div>`;
+  out.innerHTML = html;
+}
+function avgCores(pa){ const ks=[3,4,5].filter(k=>pa[k]); if(!ks.length) return null;
+  const r={}; ['o10','s10','d10'].forEach(f=>r[f]=ks.reduce((a,k)=>a+pa[k][f],0)/ks.length); return r; }
+
+$('mGo').onclick = ()=>{ const id=parseMatchInput($('mId').value); if(!id){ $('mOut').innerHTML='<div class="err">Вставь номер матча или ссылку на него (OpenDota, Dotabuff, Stratz).</div>'; return; } loadMatch(id, parseAccount($('mAcc').value)); };
+$('mId').addEventListener('keydown', e=>{ if(e.key==='Enter') $('mGo').click(); });
+$('mAccGo').onclick = loadRecent;
+$('mAcc').addEventListener('keydown', e=>{ if(e.key==='Enter') loadRecent(); });
+$('mRecent').addEventListener('click', e=>{ const b=e.target.closest('.rm'); if(!b) return; $('mId').value=b.dataset.mid; loadMatch(b.dataset.mid, b.dataset.acc); });
+$('mOut').addEventListener('click', e=>{
+  const b=e.target.closest('.mp'); if(b){ M.sel=+b.dataset.pi; document.querySelectorAll('#mOut .mp').forEach(x=>x.classList.toggle('on', x===b)); if(isParsed(M.m)) analyzePlayer(); return; }
+  if(e.target.id==='parseBtn') requestParse(M.m.match_id);
+});
+try{ const a=localStorage.getItem('dm_acc'); if(a) $('mAcc').value=a; }catch(e){}
+
 // ---------- UI ----------
 function switchTab(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
-  ['duos','builds','heroes','wards'].forEach(x=>$('tab-'+x).hidden = x!==t);
+  ['duos','builds','heroes','wards','match'].forEach(x=>$('tab-'+x).hidden = x!==t);
   if(t==='wards' && S.start) loadWards();
   try{ localStorage.setItem('dm_tab', t); }catch(e){}
 }
