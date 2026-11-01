@@ -51,6 +51,17 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
 .hsel img{width:110px;border-radius:6px}
 .note{color:var(--mut);font-size:12px;margin-top:20px;line-height:1.5}
 .pill{display:inline-block;padding:1px 7px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);font-size:11px;color:var(--mut)}
+.wardwrap{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+.map{position:relative;width:min(100%,640px);aspect-ratio:1;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#1b2a1b url(map_740.webp) center/cover;flex:0 0 auto}
+.map canvas{position:absolute;inset:0;width:100%;height:100%}
+.ward{position:absolute;transform:translate(-50%,-50%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#111;cursor:default;box-shadow:0 0 0 2px rgba(0,0,0,.55)}
+.ward.obs{background:rgba(232,180,74,.85)}
+.ward.sen{background:rgba(90,170,255,.85)}
+.ward.hl{outline:3px solid #fff;z-index:2}
+.wardlist{flex:1 1 300px;min-width:280px}
+.wardlist tr{cursor:default}
+.wardlist tr.hl td{background:var(--panel2)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:0}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--mut);border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes s{to{transform:rotate(360deg)}}
 </style>
@@ -60,9 +71,10 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
   <h1>Dota 2 <span>Meta</span> — связки и сборки</h1>
   <div class="sub" id="patchInfo"><span class="spin"></span>Загрузка данных патча…</div>
   <nav>
-    <button data-tab="duos" class="on">Связки керри + саппорт</button>
+    <button data-tab="duos" class="on">Связки</button>
     <button data-tab="builds">Сборки</button>
     <button data-tab="heroes">Герои патча</button>
+    <button data-tab="wards">Варды</button>
   </nav>
 </header>
 <main>
@@ -80,6 +92,12 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
 
   <section id="tab-duos">
     <div class="bar">
+      <label>Пары
+        <select id="duoMode">
+          <option value="cs">Керри + 5 (лёгкая линия)</option>
+          <option value="ss">4 + 5 (два саппорта)</option>
+        </select>
+      </label>
       <label>Сортировка
         <select id="duoSort">
           <option value="score">Надёжный винрейт</option>
@@ -90,7 +108,7 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
       </label>
       <label>Мин. игр <input type="number" id="duoMin" value="15" min="1"></label>
       <label>Герой <input type="text" id="duoSearch" placeholder="напр. Faceless"></label>
-      <label><input type="checkbox" id="duoSupOnly" checked> только саппорты на 5-ке</label>
+      <label><input type="checkbox" id="duoSupOnly" checked> <span id="duoSupLbl">только саппорты на 5-ке</span></label>
     </div>
     <div id="duoList" class="grid"><div class="msg"><span class="spin"></span>Считаю связки…</div></div>
   </section>
@@ -110,9 +128,42 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
     <div class="tablewrap"><table id="heroTable"></table></div>
   </section>
 
+  <section id="tab-wards" hidden>
+    <div class="bar">
+      <label>Вард
+        <select id="wardType">
+          <option value="obs">Observer (жёлтые)</option>
+          <option value="sen">Sentry (синие)</option>
+        </select>
+      </label>
+      <label>Сторона
+        <select id="wardSide">
+          <option value="1">Свет (Radiant)</option>
+          <option value="0">Тьма (Dire)</option>
+          <option value="a">Обе</option>
+        </select>
+      </label>
+      <label>Время
+        <select id="wardTime">
+          <option value="all">Вся игра</option>
+          <option value="-1">До 0:00 (стартовые)</option>
+          <option value="0">0–10 мин</option>
+          <option value="1">10–20 мин</option>
+          <option value="2">20–35 мин</option>
+          <option value="3">35+ мин</option>
+        </select>
+      </label>
+      <label>Точек <input type="number" id="wardTop" value="20" min="3" max="60"></label>
+      <label><input type="checkbox" id="wardHeatChk" checked> тепловая карта</label>
+    </div>
+    <div id="wardOut"><div class="msg">Открой вкладку, чтобы загрузить варды</div></div>
+  </section>
+
   <div class="note">
     Данные: OpenDota (про-матчи текущего патча; паблик-винрейт — ранги Divine/Immortal за последние дни).
     Связка = два героя одной команды на лёгкой линии: керри — тот, у кого выше GPM. «Надёжный винрейт» — нижняя граница доверительного интервала, он не даёт связкам с 6 играми и 100% подняться наверх.
+    Пары 4 + 5: в каждой команде берутся два игрока с наименьшим GPM — 5-ка с самым низким, 4-ка со вторым по величине.
+    Варды: позиции из логов установки в про-матчах (последние 3000 матчей периода). Соседние точки объединяются в «центряк» — средневзвешенный центр популярного места; цифра на кружке — его место в топе.
     «Синергия» — насколько винрейт связки выше среднего винрейта этих героев по отдельности.
     Винрейт предметов завышен у поздних слотов (их чаще собирают в выигранных играх), поэтому лучшая сборка выбирается среди популярных предметов, а не только по винрейту.
   </div>
@@ -122,7 +173,7 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
 const API = 'https://api.opendota.com/api/';
 const CDN = 'https://cdn.cloudflare.steamstatic.com';
 const NEUTRAL_TIERS = true;
-const S = {heroes:{}, items:{}, itemById:{}, patch:null, start:0, heroStats:null, duos:null, heroPro:null, pubWR:{}};
+const S = {heroes:{}, items:{}, itemById:{}, patch:null, start:0, heroStats:null, duos:null, duos45:null, wards:{}, heroPro:null, pubWR:{}};
 
 const $ = id => document.getElementById(id);
 const pct = (w,n) => n ? (100*w/n) : 0;
@@ -209,21 +260,49 @@ async function loadPeriod(force=false){
     if(heroStats) heroStats.forEach(h=>{ const p=(h['7_pick']||0)+(h['8_pick']||0), w=(h['7_win']||0)+(h['8_win']||0); S.pubWR[h.id]={n:p,w}; });
     S.heroPro = {}; heroPro.forEach(r=>S.heroPro[r.hero_id]={n:+r.n,w:+r.w});
     S.duos = duos.map(r=>({carry:r.carry, sup:r.sup, n:+r.n, w:+r.w}));
+    S.duos45 = null; S.wards = {};
     const nm = totals[0] ? totals[0].n : '?';
     const from = new Date(st*1000).toLocaleDateString('ru-RU');
     $('patchInfo').innerHTML = `Патч <b>${esc(S.patch.name)}</b> · про-матчей в выборке: <b>${nm}</b> · с ${from} · обновлено ${new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}`;
     renderDuos(); renderHeroes();
+    if($('duoMode').value==='ss') loadDuos45(force);
+    if(!$('tab-wards').hidden) loadWards(force);
     if($('buildHero').value) loadBuild();
   }catch(e){ showErr(e); $('duoList').innerHTML=''; $('heroTable').innerHTML=''; }
 }
 
 // ---------- duos ----------
 function heroHasRole(id, role){ const h=S.heroes[id]; return h && h.roles && h.roles.includes(role); }
+let duo45Token=0;
+async function loadDuos45(force=false){
+  const tok=++duo45Token, st=periodStart();
+  $('duoList').innerHTML='<div class="msg"><span class="spin"></span>Считаю пары 4 + 5 по про-матчам…</div>';
+  try{
+    // в каждой команде: rk=1 — самый низкий GPM (5-ка), rk=2 — второй (4-ка)
+    const rows = await sql(`WITH p AS (
+        SELECT pm.match_id, pm.hero_id, (pm.player_slot<128) rad, ((pm.player_slot<128)=m.radiant_win)::int win,
+               row_number() OVER (PARTITION BY pm.match_id, (pm.player_slot<128) ORDER BY pm.gold_per_min ASC, pm.player_slot) rk
+        FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
+        WHERE m.start_time>=${st})
+      SELECT a.hero_id carry, b.hero_id sup, count(*) n, sum(a.win) w
+      FROM p a JOIN p b ON b.match_id=a.match_id AND b.rad=a.rad
+      WHERE a.rk=2 AND b.rk=1
+      GROUP BY 1,2 HAVING count(*)>=3 ORDER BY n DESC LIMIT 1500`, !force);
+    if(tok!==duo45Token) return;
+    S.duos45 = rows.map(r=>({carry:r.carry, sup:r.sup, n:+r.n, w:+r.w}));
+    renderDuos();
+  }catch(e){ if(tok===duo45Token) $('duoList').innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
+}
 function renderDuos(){
-  if(!S.duos) return;
+  const ss = $('duoMode').value==='ss';
+  $('duoSupLbl').textContent = ss ? 'только саппорты (по ролям героя)' : 'только саппорты на 5-ке';
+  const src = ss ? S.duos45 : S.duos;
+  if(!src){ if(ss && S.duos) loadDuos45(); return; }
   const min = +$('duoMin').value||1, q=$('duoSearch').value.trim().toLowerCase(), supOnly=$('duoSupOnly').checked, sort=$('duoSort').value;
-  let list = S.duos.filter(d=>d.n>=min);
-  if(supOnly) list = list.filter(d=>heroHasRole(d.sup,'Support') && heroHasRole(d.carry,'Carry'));
+  const r1 = ss ? '4-ка' : 'керри', r2 = ss ? '5-ка' : 'саппорт';
+  let list = src.filter(d=>d.n>=min).map(d=>({...d}));
+  if(supOnly) list = ss ? list.filter(d=>heroHasRole(d.sup,'Support'))
+                        : list.filter(d=>heroHasRole(d.sup,'Support') && heroHasRole(d.carry,'Carry'));
   if(q) list = list.filter(d=>heroName(d.carry).toLowerCase().includes(q)||heroName(d.sup).toLowerCase().includes(q));
   list.forEach(d=>{
     d.wr = pct(d.w,d.n); d.score = wilson(d.w,d.n);
@@ -236,9 +315,9 @@ function renderDuos(){
   $('duoList').innerHTML = list.map((d,i)=>`
     <div class="card"><div class="duo">
       <div class="rank">${i+1}</div>
-      <div class="hero"><img src="${heroImg(d.carry)}" alt="" loading="lazy"><span class="role">керри</span>${esc(heroName(d.carry))}</div>
+      <div class="hero" data-id="${d.carry}"><img src="${heroImg(d.carry)}" alt="" loading="lazy"><span class="role">${r1}</span>${esc(heroName(d.carry))}</div>
       <div class="plus">+</div>
-      <div class="hero"><img src="${heroImg(d.sup)}" alt="" loading="lazy"><span class="role">саппорт</span>${esc(heroName(d.sup))}</div>
+      <div class="hero" data-id="${d.sup}"><img src="${heroImg(d.sup)}" alt="" loading="lazy"><span class="role">${r2}</span>${esc(heroName(d.sup))}</div>
       <div class="stats">
         <div class="wr ${cls(d.wr)}">${fmtPct(d.wr)}</div>
         <div class="small">${d.w}–${d.n-d.w} · ${d.n} игр</div>
@@ -362,30 +441,148 @@ function renderBuild(id, rows, base, mode){
 
   // лучшие напарники героя
   if(S.duos){
-    const mates = S.duos.filter(d=>(d.carry==id||d.sup==id) && d.n>=5).map(d=>({...d, other:d.carry==id?d.sup:d.carry, wr:pct(d.w,d.n), score:wilson(d.w,d.n)}))
+    const mates = S.duos.concat(S.duos45||[]).filter(d=>(d.carry==id||d.sup==id) && d.n>=5).map(d=>({...d, other:d.carry==id?d.sup:d.carry, wr:pct(d.w,d.n), score:wilson(d.w,d.n)}))
       .sort((a,b)=>b.score-a.score).slice(0,6);
-    if(mates.length) html += `<div class="sec-h">Лучшие напарники по линии</div><div class="items">`+
+    if(mates.length) html += `<div class="sec-h">Лучшие напарники${S.duos45?'':' по линии'}</div><div class="items">`+
       mates.map(m=>`<div class="item"><img src="${heroImg(m.other)}" alt="" loading="lazy">${esc(heroName(m.other))}<div class="t"><span class="${cls(m.wr)}">${m.wr.toFixed(0)}%</span> · ${m.n} игр</div></div>`).join('')+'</div>';
   }
   $('buildOut').innerHTML = html;
 }
 
+// ---------- wards ----------
+// Координаты в obs_log/sen_log — клетки 64..191 (как у OpenDota); карта 7.40 покрывает этот квадрат.
+const toUV = (x,y) => ({u:(x-64)/127, v:(191-y)/127});
+let wardToken=0, wardView=[];
+async function loadWards(force=false){
+  const type=$('wardType').value, st=periodStart();
+  if(S.wards[type] && !force){ renderWards(); return; }
+  const tok=++wardToken;
+  $('wardOut').innerHTML='<div class="msg"><span class="spin"></span>Собираю '+(type==='obs'?'observer':'sentry')+'-варды из про-матчей…</div>';
+  try{
+    const [rows, tot] = await Promise.all([
+      sql(`WITH mm AS (SELECT match_id, radiant_win FROM matches WHERE start_time>=${st} ORDER BY match_id DESC LIMIT 3000)
+        SELECT (pm.player_slot<128)::int rad,
+               CASE WHEN (e->>'time')::int<0 THEN -1 WHEN (e->>'time')::int<600 THEN 0 WHEN (e->>'time')::int<1200 THEN 1 WHEN (e->>'time')::int<2100 THEN 2 ELSE 3 END tb,
+               round((e->>'x')::numeric)::int x, round((e->>'y')::numeric)::int y,
+               count(*) n, sum(((pm.player_slot<128)=mm.radiant_win)::int) w, sum((e->>'time')::int) ts
+        FROM mm JOIN player_matches pm ON pm.match_id=mm.match_id
+        CROSS JOIN LATERAL jsonb_array_elements(pm.${type}_log::jsonb) e
+        WHERE pm.${type}_log IS NOT NULL
+        GROUP BY 1,2,3,4 HAVING count(*)>=2`, !force),
+      sql(`SELECT count(DISTINCT pm.match_id) n FROM (SELECT match_id FROM matches WHERE start_time>=${st} ORDER BY match_id DESC LIMIT 3000) mm
+           JOIN player_matches pm ON pm.match_id=mm.match_id WHERE pm.${type}_log IS NOT NULL`, !force)
+    ]);
+    if(tok!==wardToken) return;
+    S.wards[type] = {rows: rows.map(r=>({rad:+r.rad, tb:+r.tb, x:+r.x, y:+r.y, n:+r.n, w:+r.w, ts:+r.ts})), games: +(tot[0]&&tot[0].n)||0};
+    renderWards();
+  }catch(e){ if(tok===wardToken) $('wardOut').innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
+}
+
+// жадная кластеризация: берём самую плотную клетку, собираем соседей в радиусе R, центр — средневзвешенный
+function clusterWards(cells, R=3.5){
+  const pts = cells.slice().sort((a,b)=>b.n-a.n), used=new Array(pts.length).fill(false), out=[];
+  for(let i=0;i<pts.length;i++){
+    if(used[i]) continue;
+    const c={n:0,w:0,ts:0,sx:0,sy:0,rad:{0:0,1:0}};
+    for(let j=i;j<pts.length;j++){
+      if(used[j]) continue;
+      const p=pts[j]; if(Math.hypot(p.x-pts[i].x, p.y-pts[i].y)>R) continue;
+      used[j]=true; c.n+=p.n; c.w+=p.w; c.ts+=p.ts; c.sx+=p.x*p.n; c.sy+=p.y*p.n; c.rad[p.rad]+=p.n;
+    }
+    c.x=c.sx/c.n; c.y=c.sy/c.n; out.push(c);
+  }
+  return out.sort((a,b)=>b.n-a.n);
+}
+
+function wardCells(){
+  const d=S.wards[$('wardType').value]; if(!d) return null;
+  const side=$('wardSide').value, tb=$('wardTime').value;
+  const m=new Map();
+  d.rows.forEach(r=>{
+    if(side!=='a' && String(r.rad)!==side) return;
+    if(tb!=='all' && String(r.tb)!==tb) return;
+    const k=r.x+','+r.y+','+r.rad, c=m.get(k);
+    if(c){ c.n+=r.n; c.w+=r.w; c.ts+=r.ts; } else m.set(k,{...r});
+  });
+  return [...m.values()];
+}
+
+function zoneName(x,y){ // грубое описание места: u — слева направо, v — сверху вниз; река идёт по диагонали u≈v
+  const u=(x-64)/127, v=(191-y)/127;
+  const rad = v>u, side = rad ? 'Света' : 'Тьмы';
+  if(u<0.2 && v>0.8) return 'База Света'; if(u>0.8 && v<0.2) return 'База Тьмы';
+  if(Math.abs(u-v)<0.07) return u+v<0.8 ? 'Река, верх' : u+v>1.2 ? 'Река, низ' : 'Река, центр';
+  if(u<0.1 || v<0.1) return 'Топ ('+side+')';
+  if(u>0.9 || v>0.9) return 'Бот ('+side+')';
+  const s=u+v-1;
+  return 'Лес '+side+(Math.abs(s)<0.12 ? ' (мид)' : s>0 ? ' (низ)' : ' (верх)');
+}
+
+function renderWards(){
+  const type=$('wardType').value, d=S.wards[type];
+  if(!d){ if(S.start) loadWards(); return; }
+  const cells=wardCells();
+  const total=cells.reduce((a,c)=>a+c.n,0);
+  const top=Math.max(3, Math.min(60, +$('wardTop').value||20));
+  wardView = clusterWards(cells).slice(0,top);
+  if(!total){ $('wardOut').innerHTML='<div class="msg">Нет данных о вардах для этих фильтров (возможно, матчи периода ещё не распарсены).</div>'; return; }
+  const max=wardView[0].n, games=d.games||1, sides=$('wardSide').value==='a'?2:1;
+  const markers = wardView.map((c,i)=>{ const p=toUV(c.x,c.y), sz=Math.round(16+16*Math.sqrt(c.n/max));
+    return `<div class="ward ${type}" data-i="${i}" style="left:${(p.u*100).toFixed(2)}%;top:${(p.v*100).toFixed(2)}%;width:${sz}px;height:${sz}px"
+      title="#${i+1} · ${esc(zoneName(c.x,c.y))} · ${c.n} вардов · ~${fmtTime(c.ts/c.n)}">${i+1}</div>`; }).join('');
+  const rows = wardView.map((c,i)=>{ const wr=pct(c.w,c.n), per=100*c.n/(games*sides);
+    const sd = c.rad[1]&&c.rad[0] ? '' : `<span class="dot" style="background:${c.rad[1]?'var(--good)':'var(--bad)'}"></span>`;
+    return `<tr data-i="${i}"><td class="rank">${i+1}</td><td>${sd}${esc(zoneName(c.x,c.y))}</td><td>${per>=1?per.toFixed(0):per.toFixed(1)}%</td>
+      <td class="${cls(wr)}">${fmtPct(wr)}</td><td>${fmtTime(c.ts/c.n)}</td></tr>`; }).join('');
+  $('wardOut').innerHTML = `<div class="wardwrap">
+      <div class="map" id="wardMap"><canvas id="wardHeatCv"></canvas>${markers}</div>
+      <div class="wardlist"><div class="tablewrap"><table>
+        <tr><th>#</th><th>Место</th><th title="В скольких % игр команда ставит сюда вард (в среднем)">Частота</th><th>Винрейт</th><th>Ср. время</th></tr>${rows}</table></div>
+        <div class="small" style="margin-top:6px">${games} про-матчей с логами · ${total} вардов в выборке. Частота — сколько вардов здесь приходится на одну игру команды (может быть >100%, если ставят несколько раз за игру).
+        Винрейт вардов слабо говорит о качестве места: в выигранных играх вардов просто больше.</div>
+      </div></div>`;
+  drawHeat(cells);
+}
+
+let lastHeatCells=null;
+function drawHeat(cells){
+  if(cells) lastHeatCells=cells; cells=lastHeatCells;
+  const cv=$('wardHeatCv'); if(!cv || !cells) return;
+  const W=cv.clientWidth, dpr=window.devicePixelRatio||1;
+  cv.width=W*dpr; cv.height=W*dpr;
+  const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,W,W);
+  if(!$('wardHeatChk').checked) return;
+  const max=Math.max(...cells.map(c=>c.n)), r=W/127*4.5, col=$('wardType').value==='obs'?'255,200,60':'80,170,255';
+  cells.forEach(c=>{ const p=toUV(c.x,c.y), a=Math.min(1, 0.15+0.85*c.n/max), x=p.u*W, y=p.v*W;
+    const gr=g.createRadialGradient(x,y,0,x,y,r); gr.addColorStop(0,`rgba(${col},${(a*0.7).toFixed(3)})`); gr.addColorStop(1,`rgba(${col},0)`);
+    g.fillStyle=gr; g.fillRect(x-r,y-r,2*r,2*r); });
+}
+
+// подсветка точки на карте <-> строки таблицы
+$('wardOut').addEventListener('mouseover', e=>{
+  const el=e.target.closest('[data-i]'); if(!el) return; const i=el.dataset.i;
+  document.querySelectorAll('#wardOut [data-i]').forEach(x=>x.classList.toggle('hl', x.dataset.i===i));
+});
+
 // ---------- UI ----------
 function switchTab(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
-  ['duos','builds','heroes'].forEach(x=>$('tab-'+x).hidden = x!==t);
+  ['duos','builds','heroes','wards'].forEach(x=>$('tab-'+x).hidden = x!==t);
+  if(t==='wards' && S.start) loadWards();
   try{ localStorage.setItem('dm_tab', t); }catch(e){}
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
-['duoSort','duoMin','duoSearch','duoSupOnly'].forEach(i=>$(i).addEventListener('input', renderDuos));
+['duoMode','duoSort','duoMin','duoSearch','duoSupOnly'].forEach(i=>$(i).addEventListener('input', renderDuos));
 ['heroMin','heroSearch'].forEach(i=>$(i).addEventListener('input', renderHeroes));
 $('buildHero').addEventListener('change', loadBuild);
+$('wardType').addEventListener('change', ()=>loadWards());
+['wardSide','wardTime','wardTop','wardHeatChk'].forEach(i=>$(i).addEventListener('input', renderWards));
+window.addEventListener('resize', ()=>{ if(!$('tab-wards').hidden) drawHeat(); });
 $('period').addEventListener('change', ()=>loadPeriod());
 $('reload').onclick = ()=>init(true);
 $('duoList').addEventListener('click', e=>{ /* клик по герою — открыть его сборку */
-  const img=e.target.closest('.hero'); if(!img) return;
-  const name=img.textContent.replace(/керри|саппорт/,'').trim();
-  const h=Object.values(S.heroes).find(h=>h.localized_name===name); if(h){ $('buildHero').value=h.id; switchTab('builds'); loadBuild(); }
+  const el=e.target.closest('.hero[data-id]'); if(!el) return;
+  $('buildHero').value=el.dataset.id; switchTab('builds'); loadBuild();
 });
 try{ const t=localStorage.getItem('dm_tab'); if(t) switchTab(t); }catch(e){}
 init();
