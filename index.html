@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dota 2 Meta — связки и сборки патча</title>
+<style>
+:root{--bg:#0e1116;--panel:#171c24;--panel2:#1f2630;--line:#2b3440;--txt:#e6e9ee;--mut:#8b96a5;--acc:#d9483b;--good:#5cc46a;--bad:#e0605a;--gold:#e8b44a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:16px 16px 0;max-width:1100px;margin:0 auto}
+h1{font-size:20px;margin:0 0 4px}
+h1 span{color:var(--acc)}
+.sub{color:var(--mut);font-size:13px}
+nav{display:flex;gap:6px;margin:14px 0 0;border-bottom:1px solid var(--line)}
+nav button{background:none;border:0;color:var(--mut);padding:10px 14px;font-size:15px;cursor:pointer;border-bottom:2px solid transparent}
+nav button.on{color:var(--txt);border-color:var(--acc)}
+main{max-width:1100px;margin:0 auto;padding:14px 16px 40px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+.bar label{color:var(--mut);font-size:13px;display:flex;gap:6px;align-items:center}
+select,input[type=text],input[type=number]{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:14px}
+input[type=number]{width:70px}
+.btn{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer;font-size:14px}
+.btn.sec{background:var(--panel2);border:1px solid var(--line)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+.duo{display:flex;align-items:center;gap:10px}
+.hero{display:flex;flex-direction:column;align-items:center;width:84px;text-align:center;font-size:12px}
+.hero img{width:78px;height:44px;object-fit:cover;border-radius:5px;background:var(--panel2)}
+.role{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut)}
+.plus{color:var(--mut);font-size:18px}
+.stats{margin-left:auto;text-align:right}
+.wr{font-size:22px;font-weight:700}
+.g{color:var(--good)}.b{color:var(--bad)}.m{color:var(--mut)}
+.small{font-size:12px;color:var(--mut)}
+.rank{color:var(--gold);font-weight:700;font-size:13px;width:24px}
+.msg{padding:30px;text-align:center;color:var(--mut)}
+.err{background:#3a1a1a;border:1px solid #6b2a2a;color:#ffb3ad;padding:12px;border-radius:8px;margin-bottom:12px}
+.sec-h{font-size:15px;margin:18px 0 8px;display:flex;align-items:baseline;gap:8px}
+.items{display:flex;flex-wrap:wrap;gap:8px}
+.item{width:74px;text-align:center;font-size:11px}
+.item img{width:60px;height:44px;object-fit:cover;border-radius:4px;background:var(--panel2);display:block;margin:0 auto 3px}
+.item .t{color:var(--mut)}
+.arrow{align-self:center;color:var(--mut);font-size:16px;margin-top:-18px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--mut);font-weight:500;cursor:pointer;user-select:none;white-space:nowrap}
+td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:middle;margin-right:6px}
+.tablewrap{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px 8px}
+.hsel{display:flex;gap:12px;align-items:center}
+.hsel img{width:110px;border-radius:6px}
+.note{color:var(--mut);font-size:12px;margin-top:20px;line-height:1.5}
+.pill{display:inline-block;padding:1px 7px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);font-size:11px;color:var(--mut)}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--mut);border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Dota 2 <span>Meta</span> — связки и сборки</h1>
+  <div class="sub" id="patchInfo"><span class="spin"></span>Загрузка данных патча…</div>
+  <nav>
+    <button data-tab="duos" class="on">Связки керри + саппорт</button>
+    <button data-tab="builds">Сборки</button>
+    <button data-tab="heroes">Герои патча</button>
+  </nav>
+</header>
+<main>
+  <div id="globalErr"></div>
+  <div class="bar">
+    <label>Период
+      <select id="period">
+        <option value="patch">Весь текущий патч</option>
+        <option value="60">Последние 60 дней</option>
+        <option value="30">Последние 30 дней</option>
+      </select>
+    </label>
+    <button class="btn sec" id="reload">Обновить данные</button>
+  </div>
+
+  <section id="tab-duos">
+    <div class="bar">
+      <label>Сортировка
+        <select id="duoSort">
+          <option value="score">Надёжный винрейт</option>
+          <option value="wr">Винрейт</option>
+          <option value="n">Популярность</option>
+          <option value="syn">Синергия</option>
+        </select>
+      </label>
+      <label>Мин. игр <input type="number" id="duoMin" value="15" min="1"></label>
+      <label>Герой <input type="text" id="duoSearch" placeholder="напр. Faceless"></label>
+      <label><input type="checkbox" id="duoSupOnly" checked> только саппорты на 5-ке</label>
+    </div>
+    <div id="duoList" class="grid"><div class="msg"><span class="spin"></span>Считаю связки…</div></div>
+  </section>
+
+  <section id="tab-builds" hidden>
+    <div class="bar">
+      <label>Герой <select id="buildHero"></select></label>
+    </div>
+    <div id="buildOut"><div class="msg">Выбери героя</div></div>
+  </section>
+
+  <section id="tab-heroes" hidden>
+    <div class="bar">
+      <label>Мин. игр <input type="number" id="heroMin" value="30" min="1"></label>
+      <label>Поиск <input type="text" id="heroSearch" placeholder="имя героя"></label>
+    </div>
+    <div class="tablewrap"><table id="heroTable"></table></div>
+  </section>
+
+  <div class="note">
+    Данные: OpenDota (про-матчи текущего патча; паблик-винрейт — ранги Divine/Immortal за последние дни).
+    Связка = два героя одной команды на лёгкой линии: керри — тот, у кого выше GPM. «Надёжный винрейт» — нижняя граница доверительного интервала, он не даёт связкам с 6 играми и 100% подняться наверх.
+    «Синергия» — насколько винрейт связки выше среднего винрейта этих героев по отдельности.
+    Винрейт предметов завышен у поздних слотов (их чаще собирают в выигранных играх), поэтому лучшая сборка выбирается среди популярных предметов, а не только по винрейту.
+  </div>
+</main>
+
+<script>
+const API = 'https://api.opendota.com/api/';
+const CDN = 'https://cdn.cloudflare.steamstatic.com';
+const NEUTRAL_TIERS = true;
+const S = {heroes:{}, items:{}, itemById:{}, patch:null, start:0, heroStats:null, duos:null, heroPro:null, pubWR:{}};
+
+const $ = id => document.getElementById(id);
+const pct = (w,n) => n ? (100*w/n) : 0;
+const fmtPct = v => v.toFixed(1)+'%';
+const cls = v => v>=52 ? 'g' : v<48 ? 'b' : '';
+function wilson(w,n,z=1.64){ if(!n) return 0; const p=w/n, z2=z*z;
+  return (p + z2/(2*n) - z*Math.sqrt(p*(1-p)/n + z2/(4*n*n)))/(1+z2/n); }
+const fmtTime = s => { if(s==null) return ''; const neg=s<0; s=Math.abs(Math.round(s)); return (neg?'-':'')+Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
+const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function cacheGet(k){ try{ const v=JSON.parse(localStorage.getItem('dm_'+k)); if(v && Date.now()-v.t < 3600e3) return v.d; }catch(e){} return null; }
+function cacheSet(k,d){ try{ localStorage.setItem('dm_'+k, JSON.stringify({t:Date.now(),d})); }catch(e){} }
+
+async function getJSON(path, useCache=true){
+  if(useCache){ const c=cacheGet(path); if(c) return c; }
+  const r = await fetch(API+path);
+  if(!r.ok) throw new Error('OpenDota ответил '+r.status+(r.status==429?' (лимит запросов, подожди минуту)':''));
+  const d = await r.json();
+  if(useCache) cacheSet(path,d);
+  return d;
+}
+async function sql(q, useCache=true){
+  const d = await getJSON('explorer?sql='+encodeURIComponent(q.replace(/\s+/g,' ').trim()), useCache);
+  if(d.err) throw new Error('SQL: '+(d.err.message||JSON.stringify(d.err)));
+  return d.rows||[];
+}
+
+const heroImg = id => { const h=S.heroes[id]; return h ? CDN+h.img : ''; };
+const heroName = id => S.heroes[id] ? S.heroes[id].localized_name : ('#'+id);
+const itemImg = k => S.items[k] && S.items[k].img ? CDN+S.items[k].img : '';
+const itemName = k => S.items[k] ? (S.items[k].dname||k) : k;
+
+function periodStart(){
+  const v=$('period').value;
+  if(v==='patch') return S.start;
+  return Math.max(S.start, Math.floor(Date.now()/1000) - (+v)*86400);
+}
+
+// ---------- init ----------
+async function init(force=false){
+  $('globalErr').innerHTML='';
+  try{
+    const [patches, heroes, items] = await Promise.all([
+      getJSON('constants/patch', !force), getJSON('constants/heroes', !force), getJSON('constants/items', !force)]);
+    const last = patches[patches.length-1];
+    S.patch = last; S.start = Math.floor(new Date(last.date).getTime()/1000);
+    S.heroes = {}; Object.values(heroes).forEach(h=>S.heroes[h.id]=h);
+    S.items = items; S.itemById = {}; Object.entries(items).forEach(([k,v])=>{ if(v.id!=null) S.itemById[v.id]=k; });
+    fillHeroSelect();
+    await loadPeriod(force);
+  }catch(e){
+    showErr(e);
+  }
+}
+
+function showErr(e){
+  const blocked = e instanceof TypeError;
+  $('globalErr').innerHTML = '<div class="err"><b>Не удалось загрузить данные.</b> '+esc(e.message)+
+    (blocked ? '<br>Похоже, браузер не пускает запросы к api.opendota.com. Открой этот файл в обычном браузере (Chrome, Firefox, Edge) с доступом в интернет, а не во встроенном предпросмотре.' : '')+'</div>';
+  $('patchInfo').textContent = 'Данные не загружены';
+}
+
+async function loadPeriod(force=false){
+  const st = periodStart();
+  $('duoList').innerHTML='<div class="msg"><span class="spin"></span>Считаю связки по про-матчам…</div>';
+  $('heroTable').innerHTML='<tr><td class="msg"><span class="spin"></span>Загрузка…</td></tr>';
+  try{
+    const [heroPro, duos, totals, heroStats] = await Promise.all([
+      sql(`SELECT pm.hero_id, count(*) n, sum(((pm.player_slot<128)=m.radiant_win)::int) w
+           FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
+           WHERE m.start_time>=${st} GROUP BY 1`, !force),
+      sql(`SELECT c.hero_id carry, s.hero_id sup, count(*) n, sum(((c.player_slot<128)=m.radiant_win)::int) w
+           FROM matches m
+           JOIN player_matches c ON c.match_id=m.match_id
+           JOIN player_matches s ON s.match_id=m.match_id
+           WHERE m.start_time>=${st} AND c.lane_role=1 AND s.lane_role=1
+             AND (c.player_slot<128)=(s.player_slot<128) AND c.gold_per_min>s.gold_per_min
+           GROUP BY 1,2 HAVING count(*)>=3 ORDER BY n DESC LIMIT 1500`, !force),
+      sql(`SELECT count(*) n FROM matches WHERE start_time>=${st}`, !force),
+      S.heroStats ? Promise.resolve(S.heroStats) : getJSON('heroStats', !force).catch(()=>null)
+    ]);
+    S.heroStats = heroStats;
+    S.pubWR = {};
+    if(heroStats) heroStats.forEach(h=>{ const p=(h['7_pick']||0)+(h['8_pick']||0), w=(h['7_win']||0)+(h['8_win']||0); S.pubWR[h.id]={n:p,w}; });
+    S.heroPro = {}; heroPro.forEach(r=>S.heroPro[r.hero_id]={n:+r.n,w:+r.w});
+    S.duos = duos.map(r=>({carry:r.carry, sup:r.sup, n:+r.n, w:+r.w}));
+    const nm = totals[0] ? totals[0].n : '?';
+    const from = new Date(st*1000).toLocaleDateString('ru-RU');
+    $('patchInfo').innerHTML = `Патч <b>${esc(S.patch.name)}</b> · про-матчей в выборке: <b>${nm}</b> · с ${from} · обновлено ${new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}`;
+    renderDuos(); renderHeroes();
+    if($('buildHero').value) loadBuild();
+  }catch(e){ showErr(e); $('duoList').innerHTML=''; $('heroTable').innerHTML=''; }
+}
+
+// ---------- duos ----------
+function heroHasRole(id, role){ const h=S.heroes[id]; return h && h.roles && h.roles.includes(role); }
+function renderDuos(){
+  if(!S.duos) return;
+  const min = +$('duoMin').value||1, q=$('duoSearch').value.trim().toLowerCase(), supOnly=$('duoSupOnly').checked, sort=$('duoSort').value;
+  let list = S.duos.filter(d=>d.n>=min);
+  if(supOnly) list = list.filter(d=>heroHasRole(d.sup,'Support') && heroHasRole(d.carry,'Carry'));
+  if(q) list = list.filter(d=>heroName(d.carry).toLowerCase().includes(q)||heroName(d.sup).toLowerCase().includes(q));
+  list.forEach(d=>{
+    d.wr = pct(d.w,d.n); d.score = wilson(d.w,d.n);
+    const a=S.heroPro[d.carry], b=S.heroPro[d.sup];
+    d.syn = (a&&b) ? d.wr - (pct(a.w,a.n)+pct(b.w,b.n))/2 : 0;
+  });
+  list.sort((x,y)=>y[sort]-x[sort]);
+  list = list.slice(0,60);
+  if(!list.length){ $('duoList').innerHTML='<div class="msg">Нет связок с такими фильтрами — уменьши «Мин. игр».</div>'; return; }
+  $('duoList').innerHTML = list.map((d,i)=>`
+    <div class="card"><div class="duo">
+      <div class="rank">${i+1}</div>
+      <div class="hero"><img src="${heroImg(d.carry)}" alt="" loading="lazy"><span class="role">керри</span>${esc(heroName(d.carry))}</div>
+      <div class="plus">+</div>
+      <div class="hero"><img src="${heroImg(d.sup)}" alt="" loading="lazy"><span class="role">саппорт</span>${esc(heroName(d.sup))}</div>
+      <div class="stats">
+        <div class="wr ${cls(d.wr)}">${fmtPct(d.wr)}</div>
+        <div class="small">${d.w}–${d.n-d.w} · ${d.n} игр</div>
+        <div class="small">синергия <span class="${d.syn>0?'g':'b'}">${d.syn>0?'+':''}${d.syn.toFixed(1)}</span></div>
+      </div>
+    </div></div>`).join('');
+}
+
+// ---------- heroes ----------
+let heroSort = {k:'n', dir:-1};
+function renderHeroes(){
+  if(!S.heroPro) return;
+  const min=+$('heroMin').value||1, q=$('heroSearch').value.trim().toLowerCase();
+  const total = Object.values(S.heroPro).reduce((a,b)=>a+b.n,0)/10 || 1;
+  let rows = Object.keys(S.heroes).map(id=>{ const p=S.heroPro[id]||{n:0,w:0}, pub=S.pubWR[id]||{n:0,w:0};
+    return {id, name:heroName(id), n:p.n, wr:pct(p.w,p.n), pick:100*p.n/total, pub:pub.n?pct(pub.w,pub.n):0, pubn:pub.n}; })
+    .filter(r=>r.n>=min && (!q || r.name.toLowerCase().includes(q)));
+  rows.sort((a,b)=> (typeof a[heroSort.k]==='string' ? a[heroSort.k].localeCompare(b[heroSort.k]) : a[heroSort.k]-b[heroSort.k]) * heroSort.dir);
+  const th=(k,t)=>`<th data-k="${k}">${t}${heroSort.k===k?(heroSort.dir<0?' ▼':' ▲'):''}</th>`;
+  $('heroTable').innerHTML = `<tr>${th('name','Герой')}${th('n','Игр (про)')}${th('pick','Пик-рейт')}${th('wr','Винрейт (про)')}${th('pub','Винрейт паб 7–8 ранг')}</tr>`+
+    rows.map(r=>`<tr data-id="${r.id}" style="cursor:pointer"><td><img src="${heroImg(r.id)}" alt="" loading="lazy">${esc(r.name)}</td><td>${r.n}</td><td>${r.pick.toFixed(1)}%</td>
+      <td class="${cls(r.wr)}">${fmtPct(r.wr)}</td><td class="${r.pubn?cls(r.pub):'m'}">${r.pubn?fmtPct(r.pub):'—'}</td></tr>`).join('');
+}
+$('heroTable').addEventListener('click', e=>{
+  const th=e.target.closest('th'); if(th){ const k=th.dataset.k; heroSort = {k, dir: heroSort.k===k ? -heroSort.dir : (k==='name'?1:-1)}; renderHeroes(); return; }
+  const tr=e.target.closest('tr[data-id]'); if(tr){ $('buildHero').value=tr.dataset.id; switchTab('builds'); loadBuild(); }
+});
+
+// ---------- builds ----------
+function fillHeroSelect(){
+  const opts = Object.values(S.heroes).sort((a,b)=>a.localized_name.localeCompare(b.localized_name));
+  const cur=$('buildHero').value;
+  $('buildHero').innerHTML = '<option value="">— выбери —</option>'+opts.map(h=>`<option value="${h.id}">${esc(h.localized_name)}</option>`).join('');
+  if(cur) $('buildHero').value=cur;
+}
+const CONSUMABLE = new Set(['tango','flask','clarity','ward_observer','ward_sentry','smoke_of_deceit','dust','tpscroll','enchanted_mango','faerie_fire','blood_grenade','tome_of_knowledge','cheese','aegis','refresher_shard','ward_dispenser','famango','great_famango','greater_famango','branches_ward']);
+function isBuildItem(k){
+  const it=S.items[k]; if(!it || k.startsWith('recipe_')) return false;
+  if(CONSUMABLE.has(k) || it.qual==='consumable') return false;
+  if(it.tier) return false; // нейтралки
+  return !!(it.components && it.components.length) || (it.cost||0) >= 1000;
+}
+function itemTile(r, extra=''){
+  return `<div class="item" title="${esc(itemName(r.k))}"><img src="${itemImg(r.k)}" alt="" loading="lazy">${esc(itemName(r.k))}
+    <div class="t">${extra}</div></div>`;
+}
+
+let buildToken=0;
+async function loadBuild(){
+  const id=+$('buildHero').value; if(!id){ $('buildOut').innerHTML='<div class="msg">Выбери героя</div>'; return; }
+  const tok=++buildToken, st=periodStart();
+  $('buildOut').innerHTML='<div class="msg"><span class="spin"></span>Анализирую покупки '+esc(heroName(id))+'…</div>';
+  try{
+    let mode='timeline', rows, base;
+    try{
+      [rows, base] = await Promise.all([
+        sql(`SELECT x.k, count(*) n, sum(x.win) w, avg(x.t)::int t, sum((x.t<=0)::int) s FROM (
+               SELECT p.match_id, e->>'key' k, min((e->>'time')::int) t, max(((p.player_slot<128)=m.radiant_win)::int) win
+               FROM player_matches p JOIN matches m ON m.match_id=p.match_id
+               CROSS JOIN LATERAL jsonb_array_elements(p.purchase_log::jsonb) e
+               WHERE m.start_time>=${st} AND p.hero_id=${id} GROUP BY 1,2) x
+             GROUP BY 1 ORDER BY n DESC LIMIT 120`),
+        sql(`SELECT count(*) n, sum(((p.player_slot<128)=m.radiant_win)::int) w FROM player_matches p JOIN matches m ON m.match_id=p.match_id
+             WHERE m.start_time>=${st} AND p.hero_id=${id} AND p.purchase_log IS NOT NULL`)
+      ]);
+      if(!rows.length || !+base[0].n) throw new Error('empty');
+    }catch(e){
+      if(tok!==buildToken) return;
+      mode='final';
+      [rows, base] = await Promise.all([
+        sql(`SELECT it AS id, count(*) n, sum(win) w FROM (
+               SELECT unnest(ARRAY[p.item_0,p.item_1,p.item_2,p.item_3,p.item_4,p.item_5]) it, ((p.player_slot<128)=m.radiant_win)::int win
+               FROM player_matches p JOIN matches m ON m.match_id=p.match_id WHERE m.start_time>=${st} AND p.hero_id=${id}) x
+             WHERE it>0 GROUP BY 1 ORDER BY n DESC LIMIT 80`),
+        sql(`SELECT count(*) n, sum(((p.player_slot<128)=m.radiant_win)::int) w FROM player_matches p JOIN matches m ON m.match_id=p.match_id
+             WHERE m.start_time>=${st} AND p.hero_id=${id}`)
+      ]);
+      rows = rows.map(r=>({k:S.itemById[r.id], n:r.n, w:r.w, t:null, s:0})).filter(r=>r.k);
+    }
+    if(tok!==buildToken) return;
+    renderBuild(id, rows, base[0], mode);
+  }catch(e){ if(tok===buildToken) $('buildOut').innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
+}
+
+function renderBuild(id, rows, base, mode){
+  const G=+base.n, baseWR=pct(+base.w,G);
+  const head = `<div class="card hsel"><img src="${heroImg(id)}" alt=""><div><div style="font-size:18px;font-weight:600">${esc(heroName(id))}</div>
+     <div class="small">${G} про-игр в выборке · общий винрейт <b class="${cls(baseWR)}">${fmtPct(baseWR)}</b></div>
+     <div class="small">${mode==='timeline'?'Анализ по логам покупок (время и порядок)':'Анализ по итоговому инвентарю (логи покупок недоступны)'}</div></div></div>`;
+  if(G<5){ $('buildOut').innerHTML = head+'<div class="msg">Слишком мало игр на герое в этом периоде — выбери «Весь текущий патч».</div>'; return; }
+  rows.forEach(r=>{ r.n=+r.n; r.w=+r.w; r.s=+r.s||0; r.pick=r.n/G; r.wr=pct(r.w,r.n); r.delta=r.wr-baseWR; r.score=wilson(r.w,r.n); });
+
+  const start = mode==='timeline' ? rows.filter(r=>r.s/G>=0.2 && !r.k.startsWith('recipe_')).sort((a,b)=>b.s-a.s).slice(0,7) : [];
+  const cand = rows.filter(r=>isBuildItem(r.k));
+  const minN = Math.max(4, Math.round(G*0.05));
+  const early = mode==='timeline'
+    ? cand.filter(r=>r.t<900 && (S.items[r.k].cost||0)<2600 && r.pick>=0.25).sort((a,b)=>a.t-b.t).slice(0,4) : [];
+  const earlySet = new Set(early.map(r=>r.k));
+  let core = cand.filter(r=>!earlySet.has(r.k) && r.pick>=0.15 && r.n>=minN && (S.items[r.k].cost||0)>=1400)
+                 .sort((a,b)=>b.score-a.score).slice(0,6);
+  if(mode==='timeline') core.sort((a,b)=>a.t-b.t); else core.sort((a,b)=>b.pick-a.pick);
+  const coreSet = new Set(core.map(r=>r.k));
+  const situ = cand.filter(r=>!earlySet.has(r.k) && !coreSet.has(r.k) && r.pick>=0.05 && r.n>=Math.max(3,Math.round(G*0.03)))
+                 .sort((a,b)=>b.delta-a.delta).slice(0,8);
+
+  const lab = r => `${Math.round(r.pick*100)}% · <span class="${cls(r.wr)}">${r.wr.toFixed(0)}%</span>${r.t!=null?'<br>~'+fmtTime(r.t):''}`;
+  const chain = arr => arr.map((r,i)=>(i?'<div class="arrow">›</div>':'')+itemTile(r, lab(r))).join('');
+
+  let html = head;
+  if(start.length) html += `<div class="sec-h">Стартовые предметы <span class="pill">куплено до 0:00</span></div><div class="items">${start.map(r=>itemTile(r, Math.round(100*r.s/G)+'% игр')).join('')}</div>`;
+  if(early.length) html += `<div class="sec-h">Ранняя игра</div><div class="items">${chain(early)}</div>`;
+  html += `<div class="sec-h">Лучшая сборка ${mode==='timeline'?'<span class="pill">в порядке покупки</span>':''}</div>`+
+          (core.length ? `<div class="items">${chain(core)}</div>` : '<div class="small">Недостаточно данных.</div>');
+  if(situ.length) html += `<div class="sec-h">Ситуативные <span class="pill">реже, но с высоким винрейтом</span></div><div class="items">${situ.map(r=>itemTile(r, lab(r))).join('')}</div>`;
+  html += `<div class="small" style="margin-top:6px">Под предметом: % игр, где его купили · винрейт в таких играх${mode==='timeline'?' · среднее время покупки':''}</div>`;
+
+  const all = cand.filter(r=>r.n>=3).sort((a,b)=>b.n-a.n);
+  html += `<div class="sec-h">Все предметы</div><div class="tablewrap"><table><tr><th>Предмет</th><th>Покупают</th><th>Винрейт</th><th>Δ к герою</th>${mode==='timeline'?'<th>Время</th>':''}</tr>`+
+    all.map(r=>`<tr><td><img src="${itemImg(r.k)}" alt="" loading="lazy">${esc(itemName(r.k))}</td><td>${(r.pick*100).toFixed(0)}%</td>
+      <td class="${cls(r.wr)}">${fmtPct(r.wr)}</td><td class="${r.delta>0?'g':'b'}">${r.delta>0?'+':''}${r.delta.toFixed(1)}</td>${mode==='timeline'?'<td>'+fmtTime(r.t)+'</td>':''}</tr>`).join('')+'</table></div>';
+
+  // лучшие напарники героя
+  if(S.duos){
+    const mates = S.duos.filter(d=>(d.carry==id||d.sup==id) && d.n>=5).map(d=>({...d, other:d.carry==id?d.sup:d.carry, wr:pct(d.w,d.n), score:wilson(d.w,d.n)}))
+      .sort((a,b)=>b.score-a.score).slice(0,6);
+    if(mates.length) html += `<div class="sec-h">Лучшие напарники по линии</div><div class="items">`+
+      mates.map(m=>`<div class="item"><img src="${heroImg(m.other)}" alt="" loading="lazy">${esc(heroName(m.other))}<div class="t"><span class="${cls(m.wr)}">${m.wr.toFixed(0)}%</span> · ${m.n} игр</div></div>`).join('')+'</div>';
+  }
+  $('buildOut').innerHTML = html;
+}
+
+// ---------- UI ----------
+function switchTab(t){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
+  ['duos','builds','heroes'].forEach(x=>$('tab-'+x).hidden = x!==t);
+  try{ localStorage.setItem('dm_tab', t); }catch(e){}
+}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+['duoSort','duoMin','duoSearch','duoSupOnly'].forEach(i=>$(i).addEventListener('input', renderDuos));
+['heroMin','heroSearch'].forEach(i=>$(i).addEventListener('input', renderHeroes));
+$('buildHero').addEventListener('change', loadBuild);
+$('period').addEventListener('change', ()=>loadPeriod());
+$('reload').onclick = ()=>init(true);
+$('duoList').addEventListener('click', e=>{ /* клик по герою — открыть его сборку */
+  const img=e.target.closest('.hero'); if(!img) return;
+  const name=img.textContent.replace(/керри|саппорт/,'').trim();
+  const h=Object.values(S.heroes).find(h=>h.localized_name===name); if(h){ $('buildHero').value=h.id; switchTab('builds'); loadBuild(); }
+});
+try{ const t=localStorage.getItem('dm_tab'); if(t) switchTab(t); }catch(e){}
+init();
+</script>
+</body>
+</html>
