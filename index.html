@@ -55,10 +55,13 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
 .wardwrap{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
 .map{position:relative;width:min(100%,640px);aspect-ratio:1;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#1b2a1b url(map_740.webp) center/cover;flex:0 0 auto}
 .map canvas{position:absolute;inset:0;width:100%;height:100%}
-.ward{position:absolute;transform:translate(-50%,-50%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#111;cursor:default;box-shadow:0 0 0 2px rgba(0,0,0,.55)}
-.ward.obs{background:rgba(232,180,74,.85)}
-.ward.sen{background:rgba(90,170,255,.85)}
-.ward.hl{outline:3px solid #fff;z-index:2}
+.ward{position:absolute;transform:translate(-50%,-50%);width:9px;height:9px;border-radius:50%;border:1.5px solid rgba(0,0,0,.85);cursor:default;z-index:2}
+.ward.obs{background:#ffd23f}
+.ward.sen{background:#3fa9ff}
+.ward::after{content:attr(data-n);position:absolute;left:9px;top:-9px;font-size:10px;font-weight:700;line-height:1;white-space:nowrap;text-shadow:0 0 2px #000,0 0 2px #000,0 0 3px #000}
+.ward.obs::after{color:#ffe27a}.ward.sen::after{color:#8fd0ff}
+.ward.hl{width:15px;height:15px;border:2px solid #fff;z-index:3}
+.wlegend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin:6px 0 0}
 .wardlist{flex:1 1 300px;min-width:280px}
 .wardlist tr{cursor:default}
 .wardlist tr.hl td{background:var(--panel2)}
@@ -150,6 +153,7 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
     <div class="bar">
       <label>Вард
         <select id="wardType">
+          <option value="both">Обсы и сентри</option>
           <option value="obs">Observer (жёлтые)</option>
           <option value="sen">Sentry (синие)</option>
         </select>
@@ -484,12 +488,12 @@ function renderBuild(id, rows, base, mode){
 const toUV = (x,y) => ({u:(x-64)/127, v:(191-y)/127});
 let wardToken=0, wardView=[];
 async function loadWards(force=false){
-  const type=$('wardType').value, st=periodStart();
-  if(S.wards[type] && !force){ renderWards(); return; }
+  const types=wardTypes();
+  if(types.every(t=>S.wards[t]) && !force){ renderWards(); return; }
   const tok=++wardToken;
-  $('wardOut').innerHTML='<div class="msg"><span class="spin"></span>Собираю '+(type==='obs'?'observer':'sentry')+'-варды из про-матчей…</div>';
+  $('wardOut').innerHTML='<div class="msg"><span class="spin"></span>Собираю варды из про-матчей…</div>';
   try{
-    await fetchWardData(type, force);
+    for(const t of types) await fetchWardData(t, force); // по очереди: так меньше шанс упереться в лимит OpenDota
     if(tok!==wardToken) return;
     renderWards();
   }catch(e){ if(tok===wardToken) $('wardOut').innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
@@ -537,8 +541,9 @@ function clusterWards(cells, R=3.5){
   return out.sort((a,b)=>b.n-a.n);
 }
 
-function wardCells(){
-  const d=S.wards[$('wardType').value]; if(!d) return null;
+const wardTypes = () => $('wardType').value==='both' ? ['obs','sen'] : [$('wardType').value];
+function wardCells(type){
+  const d=S.wards[type]; if(!d) return null;
   const side=$('wardSide').value, tb=$('wardTime').value;
   const m=new Map();
   d.rows.forEach(r=>{
@@ -562,43 +567,52 @@ function zoneName(x,y){ // грубое описание места: u — сл�
 }
 
 function renderWards(){
-  const type=$('wardType').value, d=S.wards[type];
-  if(!d){ if(S.start) loadWards(); return; }
-  const cells=wardCells();
-  const total=cells.reduce((a,c)=>a+c.n,0);
-  const top=Math.max(3, Math.min(60, +$('wardTop').value||20));
-  wardView = clusterWards(cells).slice(0,top);
+  const types=wardTypes();
+  if(!types.every(t=>S.wards[t])){ if(S.start) loadWards(); return; }
+  const top=Math.max(3, Math.min(60, +$('wardTop').value||20)), both=types.length>1, sides=$('wardSide').value==='a'?2:1;
+  const heat={}, groups=[]; let total=0;
+  types.forEach(t=>{
+    const cells=wardCells(t); heat[t]=cells; total+=cells.reduce((a,c)=>a+c.n,0);
+    groups.push({t, list: clusterWards(cells).slice(0,top).map((c,i)=>({...c, t, rank:i+1}))});
+  });
   if(!total){ $('wardOut').innerHTML='<div class="msg">Нет данных о вардах для этих фильтров (возможно, матчи периода ещё не распарсены).</div>'; return; }
-  const max=wardView[0].n, games=d.games||1, sides=$('wardSide').value==='a'?2:1;
-  const markers = wardView.map((c,i)=>{ const p=toUV(c.x,c.y), sz=Math.round(16+16*Math.sqrt(c.n/max));
-    return `<div class="ward ${type}" data-i="${i}" style="left:${(p.u*100).toFixed(2)}%;top:${(p.v*100).toFixed(2)}%;width:${sz}px;height:${sz}px"
-      title="#${i+1} · ${esc(zoneName(c.x,c.y))} · ${c.n} вардов · ~${fmtTime(c.ts/c.n)}">${i+1}</div>`; }).join('');
-  const rows = wardView.map((c,i)=>{ const wr=pct(c.w,c.n), per=100*c.n/(games*sides);
-    const sd = c.rad[1]&&c.rad[0] ? '' : `<span class="dot" style="background:${c.rad[1]?'var(--good)':'var(--bad)'}"></span>`;
-    return `<tr data-i="${i}"><td class="rank">${i+1}</td><td>${sd}${esc(zoneName(c.x,c.y))}</td><td>${per>=1?per.toFixed(0):per.toFixed(1)}%</td>
-      <td class="${cls(wr)}">${fmtPct(wr)}</td><td>${fmtTime(c.ts/c.n)}</td></tr>`; }).join('');
+  wardView = groups.flatMap(g=>g.list);
+  const tName={obs:'Observer',sen:'Sentry'};
+  const markers = wardView.map((c,i)=>{ const p=toUV(c.x,c.y);
+    return `<div class="ward ${c.t}" data-i="${i}" data-n="${c.rank}" style="left:${(p.u*100).toFixed(2)}%;top:${(p.v*100).toFixed(2)}%"
+      title="${tName[c.t]} #${c.rank} · ${esc(zoneName(c.x,c.y))} · ${c.n} вардов · ~${fmtTime(c.ts/c.n)}"></div>`; }).join('');
+  const table = g => { const games=S.wards[g.t].games||1;
+    return `<div class="tablewrap" style="margin-bottom:10px"><table>
+      <tr><th>#</th><th><span class="dot" style="background:${g.t==='obs'?'#ffd23f':'#3fa9ff'}"></span>${tName[g.t]} — место</th><th title="Сколько вардов здесь ставит команда за игру, в среднем">Частота</th><th>Винрейт</th><th>Ср. время</th></tr>`+
+      g.list.map(c=>{ const i=wardView.indexOf(c), wr=pct(c.w,c.n), per=100*c.n/(games*sides);
+        const sd = sides===2 && !(c.rad[1]&&c.rad[0]) ? ` <span class="pill">${c.rad[1]?'Свет':'Тьма'}</span>` : '';
+        return `<tr data-i="${i}"><td class="rank">${c.rank}</td><td>${esc(zoneName(c.x,c.y))}${sd}</td><td>${per>=1?per.toFixed(0):per.toFixed(1)}%</td>
+          <td class="${cls(wr)}">${fmtPct(wr)}</td><td>${fmtTime(c.ts/c.n)}</td></tr>`; }).join('')+'</table></div>'; };
+  const games = S.wards[types[0]].games;
   $('wardOut').innerHTML = `<div class="wardwrap">
-      <div class="map" id="wardMap"><canvas id="wardHeatCv"></canvas>${markers}</div>
-      <div class="wardlist"><div class="tablewrap"><table>
-        <tr><th>#</th><th>Место</th><th title="В скольких % игр команда ставит сюда вард (в среднем)">Частота</th><th>Винрейт</th><th>Ср. время</th></tr>${rows}</table></div>
-        <div class="small" style="margin-top:6px">${games} про-матчей с логами · ${total} вардов в выборке. Частота — сколько вардов здесь приходится на одну игру команды (может быть >100%, если ставят несколько раз за игру).
+      <div style="flex:0 0 auto;width:min(100%,640px)"><div class="map" id="wardMap" style="width:100%"><canvas id="wardHeatCv"></canvas>${markers}</div>
+        <div class="wlegend">${types.includes('obs')?'<span><span class="dot" style="background:#ffd23f"></span>Observer</span>':''}${types.includes('sen')?'<span><span class="dot" style="background:#3fa9ff"></span>Sentry</span>':''}<span>цифра — место в топе</span></div></div>
+      <div class="wardlist">${groups.map(table).join('')}
+        <div class="small">${games} про-матчей с логами · ${total} вардов в выборке. Частота — сколько вардов здесь приходится на одну игру команды (может быть >100%, если ставят несколько раз за игру).
         Винрейт вардов слабо говорит о качестве места: в выигранных играх вардов просто больше.</div>
       </div></div>`;
-  drawHeat(cells);
+  drawHeat(heat);
 }
 
-let lastHeatCells=null;
-function drawHeat(cells){
-  if(cells) lastHeatCells=cells; cells=lastHeatCells;
-  const cv=$('wardHeatCv'); if(!cv || !cells) return;
+let lastHeat=null;
+function drawHeat(heat){
+  if(heat) lastHeat=heat; heat=lastHeat;
+  const cv=$('wardHeatCv'); if(!cv || !heat) return;
   const W=cv.clientWidth, dpr=window.devicePixelRatio||1;
   cv.width=W*dpr; cv.height=W*dpr;
   const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,W,W);
   if(!$('wardHeatChk').checked) return;
-  const max=Math.max(...cells.map(c=>c.n)), r=W/127*4.5, col=$('wardType').value==='obs'?'255,200,60':'80,170,255';
-  cells.forEach(c=>{ const p=toUV(c.x,c.y), a=Math.min(1, 0.15+0.85*c.n/max), x=p.u*W, y=p.v*W;
-    const gr=g.createRadialGradient(x,y,0,x,y,r); gr.addColorStop(0,`rgba(${col},${(a*0.7).toFixed(3)})`); gr.addColorStop(1,`rgba(${col},0)`);
-    g.fillStyle=gr; g.fillRect(x-r,y-r,2*r,2*r); });
+  const r=W/127*4.5;
+  Object.entries(heat).forEach(([t,cells])=>{ if(!cells.length) return;
+    const max=Math.max(...cells.map(c=>c.n)), col=t==='obs'?'255,200,60':'60,160,255';
+    cells.forEach(c=>{ const p=toUV(c.x,c.y), a=Math.min(1, 0.15+0.85*c.n/max), x=p.u*W, y=p.v*W;
+      const gr=g.createRadialGradient(x,y,0,x,y,r); gr.addColorStop(0,`rgba(${col},${(a*0.55).toFixed(3)})`); gr.addColorStop(1,`rgba(${col},0)`);
+      g.fillStyle=gr; g.fillRect(x-r,y-r,2*r,2*r); }); });
 }
 
 // подсветка точки на карте <-> строки таблицы
