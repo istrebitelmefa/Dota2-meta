@@ -188,7 +188,7 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
     Данные: OpenDota (про-матчи текущего патча; паблик-винрейт — ранги Divine/Immortal за последние дни).
     Связка = два героя одной команды на лёгкой линии: керри — тот, у кого выше GPM. «Надёжный винрейт» — нижняя граница доверительного интервала, он не даёт связкам с 6 играми и 100% подняться наверх.
     Пары 4 + 5: в каждой команде берутся два игрока с наименьшим GPM — 5-ка с самым низким, 4-ка со вторым по величине.
-    Варды: позиции из логов установки в про-матчах (последние 3000 матчей периода). Соседние точки объединяются в «центряк» — средневзвешенный центр популярного места; цифра на кружке — его место в топе.
+    Варды: позиции из логов установки в про-матчах (последние 2000 матчей периода). Соседние точки объединяются в «центряк» — средневзвешенный центр популярного места; цифра на кружке — его место в топе.
     «Синергия» — насколько винрейт связки выше среднего винрейта этих героев по отдельности.
     Винрейт предметов завышен у поздних слотов (их чаще собирают в выигранных играх), поэтому лучшая сборка выбирается среди популярных предметов, а не только по винрейту.
   </div>
@@ -215,7 +215,11 @@ function cacheSet(k,d){ try{ localStorage.setItem('dm_'+k, JSON.stringify({t:Dat
 async function getJSON(path, useCache=true){
   if(useCache){ const c=cacheGet(path); if(c) return c; }
   const r = await fetch(API+path);
-  if(!r.ok) throw new Error('OpenDota ответил '+r.status+(r.status==429?' (лимит запросов, подожди минуту)':''));
+  if(!r.ok){
+    let detail=''; try{ const b=await r.json(); detail = b && (b.err||b.error) ? ': '+(b.err||b.error) : ''; }catch(e){}
+    if(/timeout|canceling statement/i.test(detail)) detail=': запрос не уложился в 15 секунд — выбери период «Последние 30 дней»';
+    throw new Error('OpenDota ответил '+r.status+(r.status==429?' (лимит запросов, подожди минуту)':detail));
+  }
   const d = await r.json();
   if(useCache) cacheSet(path,d);
   return d;
@@ -393,7 +397,7 @@ function itemTile(r, extra=''){
 const heroItemRows = (id, st) => sql(`SELECT x.k, count(*) n, sum(x.win) w, avg(x.t)::int t, sum((x.t<=0)::int) s FROM (
                SELECT p.match_id, e->>'key' k, min((e->>'time')::int) t, max(((p.player_slot<128)=m.radiant_win)::int) win
                FROM player_matches p JOIN matches m ON m.match_id=p.match_id
-               CROSS JOIN LATERAL jsonb_array_elements(p.purchase_log::jsonb) e
+               CROSS JOIN LATERAL unnest(p.purchase_log) e
                WHERE m.start_time>=${st} AND p.hero_id=${id} GROUP BY 1,2) x
              GROUP BY 1 ORDER BY n DESC LIMIT 120`);
 const heroItemBase = (id, st) => sql(`SELECT count(*) n, sum(((p.player_slot<128)=m.radiant_win)::int) w FROM player_matches p JOIN matches m ON m.match_id=p.match_id
@@ -497,16 +501,16 @@ function fetchWardData(type, force=false){
   const st=periodStart();
   const pr = (async()=>{
     const [rows, tot] = await Promise.all([
-      sql(`WITH mm AS (SELECT match_id, radiant_win FROM matches WHERE start_time>=${st} ORDER BY match_id DESC LIMIT 3000)
+      sql(`WITH mm AS (SELECT match_id, radiant_win FROM matches WHERE start_time>=${st} ORDER BY match_id DESC LIMIT 2000)
         SELECT (pm.player_slot<128)::int rad,
                CASE WHEN (e->>'time')::int<0 THEN -1 WHEN (e->>'time')::int<600 THEN 0 WHEN (e->>'time')::int<1200 THEN 1 WHEN (e->>'time')::int<2100 THEN 2 ELSE 3 END tb,
                round((e->>'x')::numeric)::int x, round((e->>'y')::numeric)::int y,
                count(*) n, sum(((pm.player_slot<128)=mm.radiant_win)::int) w, sum((e->>'time')::int) ts
         FROM mm JOIN player_matches pm ON pm.match_id=mm.match_id
-        CROSS JOIN LATERAL jsonb_array_elements(pm.${type}_log::jsonb) e
+        CROSS JOIN LATERAL unnest(pm.${type}_log) e
         WHERE pm.${type}_log IS NOT NULL
         GROUP BY 1,2,3,4 HAVING count(*)>=2`, !force),
-      sql(`SELECT count(DISTINCT pm.match_id) n FROM (SELECT match_id FROM matches WHERE start_time>=${st} ORDER BY match_id DESC LIMIT 3000) mm
+      sql(`SELECT count(DISTINCT pm.match_id) n FROM (SELECT match_id FROM matches WHERE start_time>=${st} ORDER BY match_id DESC LIMIT 2000) mm
            JOIN player_matches pm ON pm.match_id=mm.match_id WHERE pm.${type}_log IS NOT NULL`, !force)
     ]);
     S.wards[type] = {rows: rows.map(r=>({rad:+r.rad, tb:+r.tb, x:+r.x, y:+r.y, n:+r.n, w:+r.w, ts:+r.ts})), games: +(tot[0]&&tot[0].n)||0};
@@ -688,7 +692,7 @@ async function fetchPosAvg(){
   if(S.posAvg) return S.posAvg;
   const st=periodStart();
   const rows = await sql(`WITH p AS (
-      SELECT m.duration d, pm.deaths, jsonb_array_length(pm.obs_log::jsonb) o, jsonb_array_length(coalesce(pm.sen_log::jsonb,'[]'::jsonb)) s,
+      SELECT m.duration d, pm.deaths, coalesce(cardinality(pm.obs_log),0) o, coalesce(cardinality(pm.sen_log),0) s,
              row_number() OVER (PARTITION BY pm.match_id, (pm.player_slot<128) ORDER BY pm.gold_per_min ASC, pm.player_slot) rk
       FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
       WHERE m.start_time>=${st} AND m.duration>900 AND pm.obs_log IS NOT NULL)
