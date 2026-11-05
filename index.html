@@ -107,6 +107,19 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
 .bt{height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}.bf{height:100%;background:var(--mut);border-radius:4px}
 .bn{color:var(--mut);text-align:right;font-size:12px}.bw{text-align:right;font-weight:600}
 @media (max-width:420px){.cuts{grid-template-columns:1fr}.brow{grid-template-columns:100px 1fr 30px 46px}}
+.seg{display:flex;gap:0;margin:12px 0 0;border:1px solid var(--line);border-radius:8px;overflow:hidden;width:max-content;max-width:100%}
+.seg button{background:var(--panel);color:var(--mut);border:0;padding:8px 12px;font-size:14px;cursor:pointer}
+.seg button.on{background:var(--panel2);color:var(--txt);box-shadow:inset 0 -2px 0 var(--acc)}
+.verdict{margin-top:10px;line-height:1.5}
+.bdg{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700;vertical-align:1px;white-space:nowrap}
+.bdg.mvp{background:var(--gold);color:#111}.bdg.up{background:var(--good);color:#111}.bdg.down{background:var(--bad);color:#111}.bdg.warnb{background:var(--panel2);color:var(--gold);border:1px solid var(--gold)}
+.rks{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.rk{display:flex;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;cursor:pointer}
+.rk img{width:62px;height:35px;object-fit:cover;border-radius:4px;flex:0 0 62px;background:var(--panel2)}
+.rkm{flex:1;min-width:0}.rkm .small{margin-top:2px;line-height:1.4}
+.rkr{flex:0 0 56px;text-align:right}.rkv{font-size:20px;font-weight:700}
+.rkbar{height:5px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-top:3px}.rkbar div{height:100%;background:var(--mut)}
+@media (max-width:420px){.rk img{width:44px;height:25px;flex-basis:44px}.rk .rank{display:none}}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--mut);border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes s{to{transform:rotate(360deg)}}
 </style>
@@ -690,7 +703,7 @@ async function loadMatch(id, acc){
     if(!m){ m = await getJSON('matches/'+id, false); if(isParsed(m)) cacheSet('matches/'+id, m); }
     if(tok!==matchToken) return;
     if(!m || !m.players) throw new Error('Матч не найден');
-    M = {m, sel:null};
+    M = {m, sel:null, view: M && M.view};
     let idx = acc ? m.players.findIndex(p=>String(p.account_id)===String(acc)) : -1;
     if(idx<0) idx=0;
     M.sel = idx;
@@ -768,9 +781,10 @@ function renderMatch(){
       <div id="parseBox" style="margin-top:8px"><button class="btn" id="parseBtn">Запросить разбор реплея</button>
       <div class="small" style="margin-top:6px">OpenDota скачает реплей и разберёт его (1–3 мин). Реплеи хранятся у Valve примерно 2 недели — старые матчи разобрать уже нельзя.</div></div></div>`;
   }
+  html += `<div class="seg"><button data-mv="player" class="${M.view!=='rank'?'on':''}">Разбор игрока</button><button data-mv="rank" class="${M.view==='rank'?'on':''}">Кто тащил / кто руинил</button></div>`;
   html += '<div id="mAnalysis"></div>';
   $('mOut').innerHTML = html;
-  if(parsed) analyzePlayer();
+  if(M.view==='rank') renderRanking(); else if(parsed) analyzePlayer();
 }
 
 async function analyzePlayer(){
@@ -919,11 +933,87 @@ $('mAccGo').onclick = loadRecent;
 $('mAcc').addEventListener('keydown', e=>{ if(e.key==='Enter') loadRecent(); });
 $('mRecent').addEventListener('click', e=>{ const b=e.target.closest('.rm'); if(!b) return; $('mId').value=b.dataset.mid; loadMatch(b.dataset.mid, b.dataset.acc); });
 $('mOut').addEventListener('click', e=>{
-  const b=e.target.closest('.mp'); if(b){ M.sel=+b.dataset.pi; document.querySelectorAll('#mOut .mp').forEach(x=>x.classList.toggle('on', x===b)); if(isParsed(M.m)) analyzePlayer(); return; }
+  const sv=e.target.closest('[data-mv]'); if(sv){ M.view=sv.dataset.mv; document.querySelectorAll('#mOut .seg button').forEach(x=>x.classList.toggle('on', x===sv));
+    if(M.view==='rank') renderRanking(); else if(isParsed(M.m)) analyzePlayer(); else $('mAnalysis').innerHTML=''; return; }
+  const b=e.target.closest('.mp, .rk'); if(b){ M.sel=+b.dataset.pi; M.view='player'; document.querySelectorAll('#mOut .mp').forEach(x=>x.classList.toggle('on', +x.dataset.pi===M.sel));
+    document.querySelectorAll('#mOut .seg button').forEach(x=>x.classList.toggle('on', x.dataset.mv==='player'));
+    if(isParsed(M.m)) analyzePlayer(); else $('mAnalysis').innerHTML=''; if(b.classList.contains('rk')) $('mAnalysis').scrollIntoView(); return; }
   if(e.target.id==='parseBtn') requestParse(M.m.match_id);
   const pb=e.target.closest('[data-pacc]'); if(pb){ $('pId').value=pb.dataset.pacc; switchTab('player'); loadPlayer(); window.scrollTo(0,0); }
 });
 try{ const a=localStorage.getItem('dm_acc'); if(a) $('mAcc').value=a; }catch(e){}
+
+// ---------- кто тащил / кто руинил ----------
+const plural=(n,a,b,c)=>{ const m10=n%10, m100=n%100; return n+' '+(m10===1&&m100!==11?a:m10>=2&&m10<=4&&(m100<10||m100>=20)?b:c); };
+const clamp = v => Math.max(-1, Math.min(1, v));
+// оценка игрока 0–10 из нескольких компонент, каждая в [-1;1], с учётом позиции
+function ratePlayer(m, p, pos, posAvg){
+  const dur=m.duration, min=dur/60, rad=p.player_slot<128, isSup=pos>=4, parsed=isParsed(m);
+  const pa = posAvg ? (posRk(pos) ? posAvg[posRk(pos)] : avgCores(posAvg)) : null;
+  const comps=[], pros=[], cons=[];
+  const C=(w,c,good,bad)=>{ comps.push({w,c}); if(c>=0.4 && good) pros.push(good); if(c<=-0.4 && bad) cons.push(bad); };
+  // 1. показатели против других игроков на этом же герое (процентили OpenDota)
+  const B=p.benchmarks||{}, keys = isSup ? ['xp_per_min','hero_damage_per_min','kills_per_min','hero_healing_per_min'] : ['gold_per_min','xp_per_min','last_hits_per_min','hero_damage_per_min','tower_damage'];
+  const vals=keys.filter(k=>B[k] && B[k].pct!=null && !(k==='hero_healing_per_min' && !B[k].raw)).map(k=>B[k].pct);
+  if(vals.length){ const avg=vals.reduce((a,b)=>a+b,0)/vals.length, pc=Math.round(avg*100);
+    C(3, clamp((avg-0.5)*2.2), `статистика лучше, чем у ${pc}% игроков на ${esc(heroName(p.hero_id))}`, `статистика хуже, чем у ${100-pc}% игроков на ${esc(heroName(p.hero_id))}`); }
+  // 2. смерти против нормы позиции
+  const norm10 = pa ? pa.d10 : (isSup?1.8:1.4), d10=p.deaths*600/dur, normG=norm10*min/10;
+  C(2.5, clamp((norm10-d10)/norm10), p.deaths<=normG*0.6?`всего ${plural(p.deaths,'смерть','смерти','смертей')}`:null, `${plural(p.deaths,'смерть','смерти','смертей')} (норма для позиции ~${Math.round(normG)})`);
+  // 3. участие в убийствах команды
+  const teamK=m.players.filter(e=>(e.player_slot<128)===rad).reduce((a,e)=>a+(e.kills||0),0);
+  const tf = p.teamfight_participation!=null ? p.teamfight_participation : (teamK ? ((p.kills||0)+(p.assists||0))/teamK : null);
+  if(tf!=null && teamK>=5) C(2, clamp((tf-0.55)/0.3), `участвовал в ${Math.round(tf*100)}% убийств команды`, `участвовал лишь в ${Math.round(tf*100)}% убийств команды`);
+  // 4. линия к 10-й минуте: сам против врагов на той же линии
+  if(parsed && p.lane && dur>660 && p.gold_t && p.gold_t.length>10){
+    const at=(a,i)=>a&&a.length?a[Math.min(i,a.length-1)]:0, val=e=>at(e.gold_t,10)+at(e.xp_t,10);
+    const foes=m.players.filter(e=>(e.player_slot<128)!==rad && e.lane===p.lane);
+    if(foes.length){ const fv=foes.reduce((a,e)=>a+val(e),0)/foes.length, rel=(val(p)-fv)/Math.max(1,fv);
+      C(1.5, clamp(rel/0.3), 'выиграл линию', 'проиграл линию'); }
+  }
+  // 5. обзор для саппортов
+  if(isSup && parsed && dur>900){
+    const o10=(p.obs_log||[]).length*600/dur, n10 = pa ? pa.o10 : (pos===5?4.5:3);
+    if(n10>0) C(1.5, clamp((o10/n10-1)/0.6), `${plural((p.obs_log||[]).length,'обс','обса','обсов')} — больше нормы`, `всего ${plural((p.obs_log||[]).length,'обс','обса','обсов')} за игру`);
+  }
+  // 6. ранние смерти — отдельная ошибка
+  const key=S.heroes[p.hero_id] && S.heroes[p.hero_id].name; let early=0;
+  m.players.filter(e=>(e.player_slot<128)!==rad).forEach(e=>(e.kills_log||[]).forEach(k=>{ if(k.key===key && k.time<600) early++; }));
+  if(early>=3) cons.push(`${plural(early,'смерть','смерти','смертей')} до 10-й минуты`);
+  const W=comps.reduce((a,c)=>a+c.w,0), sc = W ? comps.reduce((a,c)=>a+c.w*c.c,0)/W : 0;
+  return {p, pos, rad, rating: Math.max(0, Math.min(10, 5+5*sc)), pros, cons, errors: comps.filter(c=>c.c<=-0.4).length + (early>=3?1:0), parts: comps.length};
+}
+
+async function renderRanking(){
+  const m=M.m, tok=matchToken, out=$('mAnalysis');
+  out.innerHTML='<div class="msg"><span class="spin"></span>Оцениваю всех игроков…</div>';
+  const posAvg = await fetchPosAvg().catch(()=>null);
+  if(tok!==matchToken || m!==M.m) return;
+  const pos=positions(m);
+  const R=m.players.map(p=>ratePlayer(m,p,pos[p.player_slot],posAvg)).sort((a,b)=>b.rating-a.rating);
+  const winRad=m.radiant_win, team=r=>r.rad===winRad;
+  const mvp=R[0], worst=R[R.length-1];
+  const carryW=R.find(team), carryL=R.find(r=>!team(r)), ruinL=R.slice().reverse().find(r=>!team(r)), ruinW=R.slice().reverse().find(team);
+  const badge = r => [ r===mvp?'<span class="bdg mvp">MVP</span>':'', (r===carryW||r===carryL)&&r!==mvp&&r.rating>=6?'<span class="bdg up">Тащил</span>':'',
+      (r===ruinL||r===ruinW)&&r.rating<4.5?'<span class="bdg down">Руинил</span>':'', r.errors>=3?`<span class="bdg warnb">${plural(r.errors,'ошибка','ошибки','ошибок')}</span>`:'' ].filter(Boolean).join(' ');
+  const name = r => esc(heroName(r.p.hero_id))+(r.p.personaname?` <span class="small">${esc(r.p.personaname)}</span>`:'');
+  const head = `<div class="card verdict">
+      <div><span class="bdg mvp">MVP</span> <b>${name(mvp)}</b> — ${mvp.rating.toFixed(1)}/10${mvp.pros.length?' · '+mvp.pros.slice(0,2).join(', '):''}</div>
+      ${carryL && carryL!==mvp && carryL.rating>=6?`<div style="margin-top:6px"><span class="bdg up">Тащил в проигравшей</span> <b>${name(carryL)}</b> — ${carryL.rating.toFixed(1)}/10. Сделал что мог.</div>`:''}
+      ${ruinL && ruinL.rating<4.5?`<div style="margin-top:6px"><span class="bdg down">Больше всех ошибок у проигравших</span> <b>${name(ruinL)}</b> — ${ruinL.rating.toFixed(1)}/10${ruinL.cons.length?' · '+ruinL.cons.slice(0,2).join(', '):''}</div>`:''}
+      ${ruinW && ruinW.rating<4.5?`<div style="margin-top:6px"><span class="bdg down">Слабее всех у победителей</span> <b>${name(ruinW)}</b> — ${ruinW.rating.toFixed(1)}/10 (команда вытащила)</div>`:''}
+    </div>`;
+  const rows = R.map((r,i)=>{ const idx=m.players.indexOf(r.p), w=r.rad===winRad;
+    return `<div class="rk" data-pi="${idx}">
+      <div class="rank">${i+1}</div><img src="${heroImg(r.p.hero_id)}" alt="">
+      <div class="rkm"><div><b>${esc(heroName(r.p.hero_id))}</b> <span class="small">поз. ${r.pos||'?'} · ${r.rad?'Свет':'Тьма'} · <span class="${w?'g':'b'}">${w?'победа':'поражение'}</span> · ${r.p.kills}/${r.p.deaths}/${r.p.assists}</span> ${badge(r)}</div>
+        <div class="small">${r.p.personaname?esc(r.p.personaname)+' · ':''}${[...r.cons.map(c=>'<span class="b">−</span> '+c), ...r.pros.map(c=>'<span class="g">+</span> '+c)].slice(0,4).join(' · ')||'ровная игра'}</div></div>
+      <div class="rkr"><div class="rkv ${r.rating>=6.5?'g':r.rating<4?'b':''}">${r.rating.toFixed(1)}</div><div class="rkbar"><div style="width:${r.rating*10}%"></div></div></div>
+    </div>`; }).join('');
+  out.innerHTML = head + `<div class="rks">${rows}</div>
+    <div class="note">Оценка 0–10 считается с учётом позиции: статистика против других игроков на этом же герое (процентили OpenDota), смерти против нормы позиции в про-матчах, участие в убийствах команды${isParsed(m)?', итог линии к 10-й минуте, для 4/5 — число обсов':''}.
+    Это грубая автоматическая оценка: она не видит решений, позиционки и того, кто кого «отвлекал». Нажми на игрока — откроется его подробный разбор.</div>`;
+}
 
 // ---------- игрок ----------
 const RANKS=['','Рекрут','Страж','Рыцарь','Герой','Легенда','Властелин','Божество','Титан'];
