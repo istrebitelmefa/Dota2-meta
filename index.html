@@ -82,6 +82,31 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
 .find.bad .fi{background:var(--bad)}.find.warn .fi{background:var(--gold)}.find.good .fi{background:var(--good)}
 .mw{position:absolute;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;color:#111;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px rgba(0,0,0,.6);z-index:2}
 .mm{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;border:2px dashed rgba(255,255,255,.75)}
+.phead{display:flex;gap:12px;align-items:center}
+.phead img{width:72px;height:72px;border-radius:8px;flex:0 0 72px;background:var(--panel2)}
+.phead a,.mhead a{color:var(--mut)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px}
+.tv{font-size:19px;font-weight:700}.tl{font-size:12px;color:var(--mut);margin-top:2px}
+.chart{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px}
+.chart .plot{position:relative}
+.chart svg{width:100%;height:180px;display:block;touch-action:pan-y}
+.chart .ax{position:absolute;transform:translateY(-50%);color:var(--mut);font-size:11px;line-height:1;pointer-events:none;white-space:nowrap}
+.chart .ax[style*=bottom]{transform:none}
+.chart .gl{stroke:var(--line);stroke-width:1}.chart .g50{stroke:var(--mut);stroke-width:1;stroke-dasharray:4 4}
+.chart .ln{fill:none;stroke:var(--gold);stroke-width:2;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.chart .xh{stroke:var(--mut);stroke-width:1;vector-effect:non-scaling-stroke}.chart .dt{position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 2px var(--panel);pointer-events:none}
+.tip{position:absolute;top:6px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:12px;pointer-events:none;width:120px}
+.wlstrip{display:flex;gap:2px;flex-wrap:wrap}
+.wlstrip span{width:10px;height:18px;border-radius:2px}.wlstrip .w{background:var(--good)}.wlstrip .l{background:var(--bad)}
+.cuts{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.ct{font-weight:600;margin-bottom:8px}
+.bars{display:flex;flex-direction:column;gap:6px}
+.brow{display:grid;grid-template-columns:118px 1fr 34px 50px;gap:8px;align-items:center;font-size:13px}
+.bl{color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt{height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}.bf{height:100%;background:var(--mut);border-radius:4px}
+.bn{color:var(--mut);text-align:right;font-size:12px}.bw{text-align:right;font-weight:600}
+@media (max-width:420px){.cuts{grid-template-columns:1fr}.brow{grid-template-columns:100px 1fr 30px 46px}}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--mut);border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes s{to{transform:rotate(360deg)}}
 </style>
@@ -96,6 +121,7 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
     <button data-tab="heroes">Герои патча</button>
     <button data-tab="wards">Варды</button>
     <button data-tab="match">Разбор матча</button>
+    <button data-tab="player">Игрок</button>
   </nav>
 </header>
 <main>
@@ -186,6 +212,22 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
     <div class="mrow"><input type="text" id="mAcc" inputmode="numeric" placeholder="Твой Steam ID или Friend ID — покажу последние матчи"><button class="btn sec" id="mAccGo">Мои матчи</button></div>
     <div id="mRecent"></div>
     <div id="mOut"><div class="msg">Вставь номер матча или введи свой ID, чтобы выбрать из последних игр.<br>Разбор ищет типичные ошибки: смерти, проигранная линия, поздние предметы, мало вижна, быстро снятые варды.</div></div>
+  </section>
+
+  <section id="tab-player" hidden>
+    <div class="mrow"><input type="text" id="pId" inputmode="numeric" placeholder="Steam ID, Friend ID или ссылка на профиль"><button class="btn" id="pGo">Показать</button></div>
+    <div class="bar">
+      <label>Период
+        <select id="pPeriod">
+          <option value="all">Всё время</option>
+          <option value="365">Год</option>
+          <option value="90" selected>90 дней</option>
+          <option value="30">30 дней</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="pRanked"> только рейтинговые</label>
+    </div>
+    <div id="pOut"><div class="msg">Введи свой Steam ID или Friend ID (его видно в Dota 2 в профиле — «ID друга»).<br>Покажу ранг, винрейт, героев, линии, форму, тильт, напарников и твои варды — с выводами, что улучшить.</div></div>
   </section>
 
   <div class="note">
@@ -603,16 +645,7 @@ let lastHeat=null;
 function drawHeat(heat){
   if(heat) lastHeat=heat; heat=lastHeat;
   const cv=$('wardHeatCv'); if(!cv || !heat) return;
-  const W=cv.clientWidth, dpr=window.devicePixelRatio||1;
-  cv.width=W*dpr; cv.height=W*dpr;
-  const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,W,W);
-  if(!$('wardHeatChk').checked) return;
-  const r=W/127*4.5;
-  Object.entries(heat).forEach(([t,cells])=>{ if(!cells.length) return;
-    const max=Math.max(...cells.map(c=>c.n)), col=t==='obs'?'255,200,60':'60,160,255';
-    cells.forEach(c=>{ const p=toUV(c.x,c.y), a=Math.min(1, 0.15+0.85*c.n/max), x=p.u*W, y=p.v*W;
-      const gr=g.createRadialGradient(x,y,0,x,y,r); gr.addColorStop(0,`rgba(${col},${(a*0.55).toFixed(3)})`); gr.addColorStop(1,`rgba(${col},0)`);
-      g.fillStyle=gr; g.fillRect(x-r,y-r,2*r,2*r); }); });
+  paintHeat(cv, heat, $('wardHeatChk').checked);
 }
 
 // подсветка точки на карте <-> строки таблицы
@@ -864,7 +897,8 @@ async function analyzePlayer(){
   const ic={bad:'✖',warn:'!',good:'✔'};
   const win=(p.player_slot<128)===m.radiant_win;
   let html = `<div class="card hsel" style="margin-top:10px"><img src="${heroImg(p.hero_id)}" alt=""><div>
-      <div style="font-size:18px;font-weight:600">${esc(heroName(p.hero_id))} <span class="small">${esc(p.personaname||'')}</span></div>
+      <div style="font-size:18px;font-weight:600">${esc(heroName(p.hero_id))} <span class="small">${esc(p.personaname||'')}</span>
+        ${p.account_id?`<button class="btn sec" data-pacc="${p.account_id}" style="padding:3px 8px;font-size:12px">Статистика игрока</button>`:''}</div>
       <div class="small">Позиция ${pos||'?'} · <b class="${win?'g':'b'}">${win?'победа':'поражение'}</b> · ${p.kills}/${p.deaths}/${p.assists} · GPM ${p.gold_per_min} · XPM ${p.xp_per_min} · добиваний ${p.last_hits}/${p.denies}</div>
       <div class="small">Найдено: <b class="b">${nb} серьёзных</b>, <b style="color:var(--gold)">${nw} замечаний</b>, <b class="g">${ng} плюсов</b></div></div></div>`;
   html += F.length ? '<div class="finds">'+F.map(f=>`<div class="find ${f.lvl}"><div class="fi">${ic[f.lvl]}</div><div><b>${f.t}</b><div class="small">${f.d}</div></div></div>`).join('')+'</div>'
@@ -887,14 +921,263 @@ $('mRecent').addEventListener('click', e=>{ const b=e.target.closest('.rm'); if(
 $('mOut').addEventListener('click', e=>{
   const b=e.target.closest('.mp'); if(b){ M.sel=+b.dataset.pi; document.querySelectorAll('#mOut .mp').forEach(x=>x.classList.toggle('on', x===b)); if(isParsed(M.m)) analyzePlayer(); return; }
   if(e.target.id==='parseBtn') requestParse(M.m.match_id);
+  const pb=e.target.closest('[data-pacc]'); if(pb){ $('pId').value=pb.dataset.pacc; switchTab('player'); loadPlayer(); window.scrollTo(0,0); }
 });
 try{ const a=localStorage.getItem('dm_acc'); if(a) $('mAcc').value=a; }catch(e){}
+
+// ---------- игрок ----------
+const RANKS=['','Рекрут','Страж','Рыцарь','Герой','Легенда','Властелин','Божество','Титан'];
+const rankName = (t, lb) => { if(!t) return 'без ранга'; const m=Math.floor(t/10), s=t%10;
+  return RANKS[m]+(m===8 ? (lb?' #'+lb:'') : (s?' '+s:'')); };
+let playerToken=0, P=null;
+
+function playerQS(){
+  const d=$('pPeriod').value, q=[];
+  if(d!=='all') q.push('date='+d);
+  if($('pRanked').checked) q.push('lobby_type=7');
+  return q.join('&');
+}
+
+async function loadPlayer(force=false){
+  const acc=parseAccount($('pId').value);
+  if(!acc){ $('pOut').innerHTML='<div class="err">Введи Steam ID, Friend ID или ссылку на профиль OpenDota/Dotabuff/Stratz.</div>'; return; }
+  try{ localStorage.setItem('dm_acc', $('pId').value.trim()); }catch(e){}
+  try{ history.replaceState(null,'','#player='+acc); }catch(e){}
+  const tok=++playerToken, qs=playerQS(), u=(path,extra='')=>'players/'+acc+path+'?'+[qs,extra].filter(Boolean).join('&');
+  $('pOut').innerHTML='<div class="msg"><span class="spin"></span>Загружаю статистику игрока…</div>';
+  try{
+    const [prof, wl, heroes, peers, totals, counts, matches, wardmap] = await Promise.all([
+      getJSON('players/'+acc, !force), getJSON(u('/wl'), !force), getJSON(u('/heroes'), !force), getJSON(u('/peers'), !force).catch(()=>[]),
+      getJSON(u('/totals'), !force).catch(()=>[]), getJSON(u('/counts'), !force).catch(()=>({})),
+      getJSON(u('/matches','limit=300&project=hero_id&project=kills&project=deaths&project=assists&project=duration&project=start_time&project=party_size&project=lane_role&project=gold_per_min&project=last_hits'), !force).catch(()=>[]),
+      getJSON(u('/wardmap'), !force).catch(()=>null)
+    ]);
+    if(tok!==playerToken) return;
+    if(!prof || !prof.profile){ $('pOut').innerHTML='<div class="err">Игрок не найден. Проверь ID. Если профиль новый, OpenDota может ещё не знать о нём — открой его на opendota.com один раз.</div>'; return; }
+    P={acc, prof, wl, heroes, peers, totals, counts, matches, wardmap};
+    renderPlayer();
+  }catch(e){ if(tok===playerToken) $('pOut').innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
+}
+
+const isWin = m => (m.player_slot<128)===m.radiant_win;
+// строка-столбик: подпись | полоса (доля игр) | игры | винрейт
+function barRows(rows, total){
+  const max=Math.max(1,...rows.map(r=>r.n));
+  return '<div class="bars">'+rows.map(r=>{ const wr=pct(r.w,r.n);
+    return `<div class="brow" title="${esc(r.label)}: ${r.n} игр, ${r.w}–${r.n-r.w}, винрейт ${fmtPct(wr)}"><div class="bl">${esc(r.label)}</div>
+      <div class="bt"><div class="bf" style="width:${(100*r.n/max).toFixed(1)}%"></div></div>
+      <div class="bn">${r.n}</div><div class="bw ${r.n>=5?cls(wr):'m'}">${r.n?fmtPct(wr):'—'}</div></div>`; }).join('')+'</div>';
+}
+function bucket(list, keyFn, order){
+  const m=new Map(order.map(k=>[k,{label:k,n:0,w:0}]));
+  list.forEach(x=>{ const k=keyFn(x); if(k==null || !m.has(k)) return; const b=m.get(k); b.n++; if(isWin(x)) b.w++; });
+  return [...m.values()];
+}
+
+let WRD=null;
+function wrChart(ms){ // ms — от старых к новым
+  const N=ms.length, win=Math.min(20, Math.max(5, Math.floor(N/5)));
+  if(N<win+3) return '';
+  const pts=[]; let s=0;
+  ms.forEach((m,i)=>{ s+=isWin(m)?1:0; if(i>=win) s-=isWin(ms[i-win])?1:0; if(i>=win-1) pts.push({i, wr:100*s/win}); });
+  const W=640, H=180, L=34, R=8, T=10, B=22, x=i=>L+(W-L-R)*i/(N-1), y=v=>T+(H-T-B)*(1-(v-0)/100);
+  const lo=Math.max(0, Math.floor((Math.min(...pts.map(p=>p.wr))-5)/10)*10), hi=Math.min(100, Math.ceil((Math.max(...pts.map(p=>p.wr))+5)/10)*10);
+  const yy=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo||1));
+  const grid=[]; for(let v=lo; v<=hi; v+=10) grid.push(v);
+  WRD = {pts:pts.map(p=>({i:p.i,wr:+p.wr.toFixed(1)})),N,lo,hi,W,H,L,R,T,B,dates:ms.map(m=>m.start_time)};
+  const path=pts.map((p,k)=>(k?'L':'M')+x(p.i).toFixed(1)+' '+yy(p.wr).toFixed(1)).join(' ');
+  const pc=(v,tot)=>(100*v/tot).toFixed(2)+'%';
+  return `<div class="chart" id="wrChart" data-win="${win}"><div class="plot">
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Скользящий винрейт за ${win} игр">
+      ${grid.map(v=>`<line x1="${L}" x2="${W-R}" y1="${yy(v)}" y2="${yy(v)}" class="${v===50?'g50':'gl'}"/>`).join('')}
+      <path d="${path}" class="ln"/>
+      <line id="wrX" class="xh" y1="${T}" y2="${H-B}" x1="-10" x2="-10"/>
+    </svg>
+    ${grid.map(v=>`<div class="ax" style="left:0;width:${pc(L-6,W)};text-align:right;top:${pc(yy(v),H)}">${v}%</div>`).join('')}
+    <div class="ax" style="left:${pc(L,W)};bottom:2px">${N} игр назад</div><div class="ax" style="right:${pc(R,W)};bottom:2px">сейчас</div>
+    <div class="dt" id="wrDot" hidden></div><div class="tip" id="wrTip" hidden></div></div>
+    <div class="small" style="margin-top:4px">Винрейт за последние ${win} игр в каждой точке. Пунктир — 50%.</div></div>`;
+}
+function wireWrChart(){
+  const el=$('wrChart'), d=WRD; if(!el||!d) return; const svg=el.querySelector('svg');
+  const x=i=>d.L+(d.W-d.L-d.R)*i/(d.N-1), yy=v=>d.T+(d.H-d.T-d.B)*(1-(v-d.lo)/(d.hi-d.lo||1));
+  const move=e=>{ const r=svg.getBoundingClientRect(), cx=((e.touches?e.touches[0].clientX:e.clientX)-r.left)/r.width*d.W;
+    let best=d.pts[0]; d.pts.forEach(p=>{ if(Math.abs(x(p.i)-cx)<Math.abs(x(best.i)-cx)) best=p; });
+    $('wrX').setAttribute('x1',x(best.i)); $('wrX').setAttribute('x2',x(best.i));
+    const dot=$('wrDot'); dot.hidden=false; dot.style.left=(100*x(best.i)/d.W)+'%'; dot.style.top=(100*yy(best.wr)/d.H)+'%';
+    const t=$('wrTip'); t.hidden=false; t.innerHTML=`<b>${best.wr}%</b> за ${el.dataset.win} игр<br><span class="small">до ${new Date(d.dates[best.i]*1000).toLocaleDateString('ru-RU')}</span>`;
+    const px=x(best.i)/d.W*r.width; t.style.left=Math.min(r.width-130, Math.max(0, px-60))+'px'; };
+  svg.addEventListener('mousemove', move); svg.addEventListener('touchstart', move, {passive:true}); svg.addEventListener('touchmove', move, {passive:true});
+  svg.addEventListener('mouseleave', ()=>{ $('wrTip').hidden=true; $('wrX').setAttribute('x1',-10); $('wrX').setAttribute('x2',-10); $('wrDot').hidden=true; });
+}
+
+function paintHeat(cv, heat, on=true){
+  const W=cv.clientWidth, dpr=window.devicePixelRatio||1;
+  cv.width=W*dpr; cv.height=W*dpr;
+  const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,W,W);
+  if(!on) return;
+  const r=W/127*4.5;
+  Object.entries(heat).forEach(([t,cells])=>{ if(!cells.length) return;
+    const max=Math.max(...cells.map(c=>c.n)), col=t==='obs'?'255,200,60':'60,160,255';
+    cells.forEach(c=>{ const p=toUV(c.x,c.y), a=Math.min(1, 0.15+0.85*c.n/max), x=p.u*W, y=p.v*W;
+      const gr=g.createRadialGradient(x,y,0,x,y,r); gr.addColorStop(0,`rgba(${col},${(a*0.55).toFixed(3)})`); gr.addColorStop(1,`rgba(${col},0)`);
+      g.fillStyle=gr; g.fillRect(x-r,y-r,2*r,2*r); }); });
+}
+const wardmapCells = o => { const out=[]; Object.entries(o||{}).forEach(([x,ys])=>Object.entries(ys||{}).forEach(([y,n])=>out.push({x:+x,y:+y,n:+n,w:0,ts:0,rad:0}))); return out; };
+
+function renderPlayer(){
+  const {acc, prof, wl, heroes, peers, totals, counts, matches, wardmap} = P;
+  const pr=prof.profile, G=(wl.win||0)+(wl.lose||0), WR=pct(wl.win||0, G);
+  const F=[]; const add=(lvl,t,d)=>F.push({lvl,t,d});
+  const tot={}; (totals||[]).forEach(t=>{ if(t.n) tot[t.field]=t.sum/t.n; });
+  const ms=(matches||[]).slice().sort((a,b)=>a.start_time-b.start_time);
+
+  let html = `<div class="card phead"><img src="${esc(pr.avatarfull||'')}" alt=""><div style="min-width:0">
+      <div style="font-size:19px;font-weight:600;overflow-wrap:anywhere">${esc(pr.personaname||'Аноним')} ${pr.plus?'<span class="pill">Plus</span>':''}</div>
+      <div class="small">Ранг: <b style="color:var(--gold)">${esc(rankName(prof.rank_tier, prof.leaderboard_rank))}</b> · ID ${acc}
+        · <a href="https://www.opendota.com/players/${acc}" target="_blank" rel="noopener">OpenDota</a></div>
+      <div class="small">${G} игр · <b class="g">${wl.win||0}</b>–<b class="b">${wl.lose||0}</b> · винрейт <b class="${cls(WR)}">${fmtPct(WR)}</b></div></div></div>`;
+  if(!G){ $('pOut').innerHTML = html+'<div class="msg">За этот период игр нет. Если игр точно были — включи в Dota 2 «Общедоступные данные матчей» (Настройки → Социальное), и через пару дней OpenDota начнёт их видеть.</div>'; return; }
+
+  // плитки средних
+  const tile=(lab,v,sub='')=>`<div class="tile"><div class="tv">${v}</div><div class="tl">${lab}</div>${sub?`<div class="small">${sub}</div>`:''}</div>`;
+  const f1=v=>v==null?'—':v.toFixed(1), f0=v=>v==null?'—':Math.round(v);
+  html += `<div class="sec-h">Средние за игру</div><div class="tiles">
+    ${tile('K / D / A', `${f1(tot.kills)} / ${f1(tot.deaths)} / ${f1(tot.assists)}`, 'KDA '+f1(tot.kda))}
+    ${tile('GPM / XPM', `${f0(tot.gold_per_min)} / ${f0(tot.xp_per_min)}`)}
+    ${tile('Добивания', f0(tot.last_hits), 'денаев '+f1(tot.denies))}
+    ${tile('Урон по героям', f0(tot.hero_damage))}
+    ${tile('Урон по строениям', f0(tot.tower_damage))}
+    ${tile('Лечение', f0(tot.hero_healing))}
+    ${tile('Длительность', tot.duration!=null?fmtTime(tot.duration):'—')}
+    ${tile('Варды obs / sen', `${f1(tot.purchase_ward_observer)} / ${f1(tot.purchase_ward_sentry)}`, 'куплено за игру')}
+  </div>`;
+
+  // тренд
+  if(ms.length>=10){
+    const last=ms.slice(-50);
+    html += `<div class="sec-h">Форма <span class="pill">последние ${ms.length} игр</span></div>${wrChart(ms)}
+      <div class="small" style="margin:8px 0 4px">Последние ${last.length} игр, слева старые → справа новые</div>
+      <div class="wlstrip">${last.map(m=>`<span class="${isWin(m)?'w':'l'}" title="${new Date(m.start_time*1000).toLocaleDateString('ru-RU')} · ${esc(heroName(m.hero_id))} · ${m.kills}/${m.deaths}/${m.assists} · ${isWin(m)?'победа':'поражение'}"></span>`).join('')}</div>`;
+    const h=Math.floor(ms.length/2), a=ms.slice(0,h), b=ms.slice(h), wa=pct(a.filter(isWin).length,a.length), wb=pct(b.filter(isWin).length,b.length);
+    if(ms.length>=40 && wb-wa>=6) add('good','Растёшь',`Винрейт в последних ${b.length} играх ${fmtPct(wb)} против ${fmtPct(wa)} в предыдущих ${a.length}.`);
+    else if(ms.length>=40 && wa-wb>=6) add('warn','Спад формы',`Винрейт в последних ${b.length} играх ${fmtPct(wb)} — ниже, чем в предыдущих ${a.length} (${fmtPct(wa)}). Возможно, стоит сделать перерыв или вернуться к своим лучшим героям.`);
+  }
+
+  // герои
+  const hs=(heroes||[]).map(h=>({id:+h.hero_id, n:+h.games, w:+h.win, last:h.last_played})).filter(h=>h.n>0);
+  const minH=Math.max(5, Math.round(G*0.02));
+  hs.forEach(h=>{ h.wr=pct(h.w,h.n); h.score=wilson(h.w,h.n); h.low=1-wilson(h.n-h.w,h.n); });
+  const solid=hs.filter(h=>h.n>=minH);
+  const best=solid.slice().sort((a,b)=>b.score-a.score).slice(0,3), worst=solid.slice().sort((a,b)=>a.low-b.low).filter(h=>h.wr<48).slice(0,3);
+  if(best.length && best[0].wr>=53) add('good','Сильные герои', best.filter(h=>h.wr>=52).map(h=>`${esc(heroName(h.id))} — ${fmtPct(h.wr)} за ${h.n} игр`).join('; ')+'. Пикай их чаще, особенно в важных играх.');
+  if(worst.length) add('warn','Слабые герои', worst.map(h=>`${esc(heroName(h.id))} — ${fmtPct(h.wr)} за ${h.n} игр`).join('; ')+'. Либо разбери сборки во вкладке «Сборки», либо пока убери их из пула.');
+  const top5=hs.slice().sort((a,b)=>b.n-a.n).slice(0,5).reduce((s,h)=>s+h.n,0);
+  if(G>=100 && hs.length>=40 && top5/G<0.3) add('warn','Очень широкий пул героев',`${hs.length} разных героев, на топ-5 приходится лишь ${Math.round(100*top5/G)}% игр. Узкий пул из 5–10 героев обычно быстрее поднимает рейтинг.`);
+  else if(G>=60 && top5/G>=0.5) add('good','Свой пул героев',`На 5 любимых героев приходится ${Math.round(100*top5/G)}% игр.`);
+
+  // роли
+  const lr=(counts&&counts.lane_role)||{}, roleNames={1:'Лёгкая линия',2:'Мид',3:'Сложная линия',4:'Лес'};
+  const roles=[1,2,3,4].map(k=>({label:roleNames[k], n:+(lr[k]&&lr[k].games)||0, w:+(lr[k]&&lr[k].win)||0})).filter(r=>r.n);
+  const rs=roles.filter(r=>r.n>=10).map(r=>({...r,wr:pct(r.w,r.n)})).sort((a,b)=>b.wr-a.wr);
+  if(rs.length>=2 && rs[0].wr-rs[rs.length-1].wr>=6) add('warn','Разница по линиям',`Лучше всего — ${rs[0].label.toLowerCase()} (${fmtPct(rs[0].wr)}), хуже всего — ${rs[rs.length-1].label.toLowerCase()} (${fmtPct(rs[rs.length-1].wr)}).`);
+  const side=(counts&&counts.is_radiant)||{};
+  const sides=[{label:'Свет',n:+(side[1]&&side[1].games)||0,w:+(side[1]&&side[1].win)||0},{label:'Тьма',n:+(side[0]&&side[0].games)||0,w:+(side[0]&&side[0].win)||0}];
+
+  // срезы по матчам
+  const dur=bucket(ms, m=>m.duration<1500?'до 25 мин':m.duration<2100?'25–35 мин':m.duration<2700?'35–45 мин':'45+ мин', ['до 25 мин','25–35 мин','35–45 мин','45+ мин']);
+  const party=bucket(ms, m=>m.party_size==null?null:m.party_size<=1?'Соло':m.party_size===2?'Вдвоём':'Пати 3–5', ['Соло','Вдвоём','Пати 3–5']);
+  const tod=bucket(ms, m=>{ const h=new Date(m.start_time*1000).getHours(); return h<6?'Ночь 0–6':h<12?'Утро 6–12':h<18?'День 12–18':'Вечер 18–24'; }, ['Утро 6–12','День 12–18','Вечер 18–24','Ночь 0–6']);
+  // серия за вечер: игры с перерывом < 1,5 ч
+  let afterL={n:0,w:0}, afterW={n:0,w:0}, late={n:0,w:0}, early={n:0,w:0}, idx=0;
+  ms.forEach((m,i)=>{ const prev=ms[i-1], same=prev && m.start_time-(prev.start_time+(prev.duration||0))<5400;
+    idx = same ? idx+1 : 1; const w=isWin(m)?1:0;
+    if(same){ const t=isWin(prev)?afterW:afterL; t.n++; t.w+=w; }
+    const g = idx>=4 ? late : early; g.n++; g.w+=w; });
+  const session=[{label:'После победы',...afterW},{label:'После поражения',...afterL},{label:'1–3-я игра за вечер',...early},{label:'4-я и дальше',...late}];
+  if(afterL.n>=15 && afterW.n>=15 && pct(afterW.w,afterW.n)-pct(afterL.w,afterL.n)>=7) add('warn','Тильт после поражений',`После поражения в ту же сессию ты выигрываешь только ${fmtPct(pct(afterL.w,afterL.n))} (после победы — ${fmtPct(pct(afterW.w,afterW.n))}). Попробуй правило: два поражения подряд — перерыв.`);
+  if(late.n>=15 && early.n>=15 && pct(early.w,early.n)-pct(late.w,late.n)>=6) add('warn','Усталость',`С 4-й игры подряд винрейт падает до ${fmtPct(pct(late.w,late.n))} (первые три — ${fmtPct(pct(early.w,early.n))}). Длинные сессии тебе не помогают.`);
+  const ps=party.filter(p=>p.n>=15).map(p=>({...p,wr:pct(p.w,p.n)}));
+  if(ps.length>=2){ ps.sort((a,b)=>b.wr-a.wr); if(ps[0].wr-ps[ps.length-1].wr>=6) add(ps[0].label==='Соло'?'warn':'good','Соло или с друзьями',`${ps[0].label}: ${fmtPct(ps[0].wr)}, ${ps[ps.length-1].label.toLowerCase()}: ${fmtPct(ps[ps.length-1].wr)}.`); }
+  const ds=dur.filter(d=>d.n>=15).map(d=>({...d,wr:pct(d.w,d.n)}));
+  if(ds.length>=3){ const s1=ds[0], s2=ds[ds.length-1];
+    if(s2.wr-s1.wr>=8) add('warn','Проигрываешь короткие игры',`Игры ${s1.label}: ${fmtPct(s1.wr)}, ${s2.label}: ${fmtPct(s2.wr)}. Слабое начало — смотри линию и первые 10 минут во вкладке «Разбор матча».`);
+    if(s1.wr-s2.wr>=8) add('warn','Проигрываешь затяжные игры',`Игры ${s1.label}: ${fmtPct(s1.wr)}, ${s2.label}: ${fmtPct(s2.wr)}. Команда не дожимает преимущество: важны смоки, Рошан и пуш после выигранных драк.`); }
+  if(tot.deaths!=null && tot.deaths>=8) add('warn','Много смертей',`В среднем ${tot.deaths.toFixed(1)} смертей за игру. Больше 7–8 — обычно признак позиционных ошибок.`);
+
+  // выводы
+  const order={bad:0,warn:1,good:2}, ic={bad:'✖',warn:'!',good:'✔'};
+  F.sort((a,b)=>order[a.lvl]-order[b.lvl]);
+  const insights = F.length ? '<div class="finds">'+F.map(f=>`<div class="find ${f.lvl}"><div class="fi">${ic[f.lvl]}</div><div><b>${f.t}</b><div class="small">${f.d}</div></div></div>`).join('')+'</div>' : '<div class="small">Пока мало данных для выводов.</div>';
+  html = html.replace('<div class="sec-h">Средние за игру</div>', `<div class="sec-h">Выводы</div>${insights}<div class="sec-h">Средние за игру</div>`);
+
+  // разрезы
+  const cut=(t,rows,note='')=>rows.some(r=>r.n)?`<div class="card"><div class="ct">${t}</div>${barRows(rows)}${note?`<div class="small" style="margin-top:6px">${note}</div>`:''}</div>`:'';
+  html += `<div class="sec-h">Где ты выигрываешь</div><div class="cuts">
+    ${cut('По линиям', roles)}${cut('По стороне', sides)}${cut('По длительности игры', dur, 'по последним '+ms.length+' играм')}
+    ${cut('Соло / пати', party)}${cut('Время суток', tod, 'по времени твоего устройства')}${cut('Серии игр', session, 'одна сессия — перерыв между играми меньше 1,5 часа')}
+  </div><div class="small" style="margin-top:6px">Полоса — сколько игр, справа винрейт (цветом, если игр ≥ 5).</div>`;
+
+  // таблица героев
+  const metaCol = Object.keys(S.pubWR||{}).length>0;
+  const hrows=hs.slice().sort((a,b)=>b.n-a.n).slice(0,40);
+  html += `<div class="sec-h">Герои <span class="pill">${hs.length} разных</span></div><div class="tablewrap"><table>
+    <tr><th>Герой</th><th>Игр</th><th>Винрейт</th>${metaCol?'<th title="Винрейт героя в пабах 7–8 ранга">Паб 7–8</th>':''}<th>Последняя</th></tr>`+
+    hrows.map(h=>{ const pub=S.pubWR[h.id];
+      return `<tr data-hid="${h.id}" style="cursor:pointer"><td><img src="${heroImg(h.id)}" alt="" loading="lazy">${esc(heroName(h.id))}</td><td>${h.n}</td><td class="${h.n>=5?cls(h.wr):'m'}">${fmtPct(h.wr)}</td>
+        ${metaCol?`<td class="${pub&&pub.n?cls(pct(pub.w,pub.n)):'m'}">${pub&&pub.n?fmtPct(pct(pub.w,pub.n)):'—'}</td>`:''}<td class="small">${h.last?new Date(h.last*1000).toLocaleDateString('ru-RU'):''}</td></tr>`; }).join('')+
+    '</table></div><div class="small" style="margin-top:6px">Нажми на героя — откроется его сборка.</div>';
+
+  // последние матчи
+  const recent=ms.slice(-15).reverse();
+  if(recent.length) html += `<div class="sec-h">Последние матчи <span class="pill">нажми — разбор</span></div><div class="recent">`+recent.map(m=>{ const w=isWin(m);
+    return `<button class="rm" data-mid="${m.match_id}" data-acc="${acc}"><img src="${heroImg(m.hero_id)}" alt=""><span class="${w?'g':'b'}">${w?'П':'Пор'}</span><span>${m.kills}/${m.deaths}/${m.assists}</span><span class="small">${new Date(m.start_time*1000).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'})}</span></button>`; }).join('')+'</div>';
+
+  // напарники
+  const pe=(peers||[]).filter(p=>p.with_games>=3).sort((a,b)=>b.with_games-a.with_games).slice(0,10);
+  if(pe.length) html += `<div class="sec-h">С кем играешь</div><div class="tablewrap"><table><tr><th>Игрок</th><th>Вместе</th><th>Винрейт вместе</th></tr>`+
+    pe.map(p=>{ const wr=pct(p.with_win,p.with_games); return `<tr data-pacc="${p.account_id}" style="cursor:pointer"><td>${p.avatar?`<img src="${esc(p.avatar)}" alt="" style="width:23px">`:''}${esc(p.personaname||p.account_id)}</td><td>${p.with_games}</td><td class="${cls(wr)}">${fmtPct(wr)}</td></tr>`; }).join('')+'</table></div>';
+
+  // варды
+  const wo=wardmapCells(wardmap&&wardmap.obs), wsn=wardmapCells(wardmap&&wardmap.sen), nObs=wo.reduce((a,c)=>a+c.n,0);
+  if(nObs+wsn.length){
+    const co=clusterWards(wo).slice(0,15), cs=clusterWards(wsn).slice(0,15);
+    const dots=[...co.map((c,i)=>({...c,t:'obs',r:i+1})), ...cs.map((c,i)=>({...c,t:'sen',r:i+1}))].map(c=>{ const q=toUV(c.x,c.y);
+      return `<div class="ward ${c.t}" data-n="${c.r}" style="left:${(q.u*100).toFixed(2)}%;top:${(q.v*100).toFixed(2)}%" title="${c.t==='obs'?'Observer':'Sentry'} #${c.r} · ${esc(zoneName(c.x,c.y))} · ${c.n} раз"></div>`; }).join('');
+    html += `<div class="sec-h">Твои варды <span class="pill">${nObs} observer</span></div>
+      <div class="wardwrap"><div style="flex:0 0 auto;width:min(100%,520px)"><div class="map" style="width:100%"><canvas id="pHeatCv"></canvas>${dots}</div>
+      <div class="wlegend"><span><span class="dot" style="background:#ffd23f"></span>Observer</span><span><span class="dot" style="background:#3fa9ff"></span>Sentry</span><span>цифра — место в топе</span></div></div>
+      <div class="small" style="flex:1 1 220px" id="pWardNote">Твои самые частые места. Сравни с метовыми точками про во вкладке «Варды».</div></div>`;
+  }
+  html += `<div class="note">Статистика OpenDota: игры видны, только если в Dota 2 включены «Общедоступные данные матчей». Средние, герои, линии и сторона — за выбранный период; форма, длительность, пати, время и серии — по последним ${ms.length} играм периода.</div>`;
+  $('pOut').innerHTML = html;
+  wireWrChart();
+  const cv=$('pHeatCv'); if(cv) paintHeat(cv, {obs:wo, sen:wsn});
+  // доля вардов в метовых точках про
+  if(nObs>=20) fetchWardData('obs').then(d=>{ const note=$('pWardNote'); if(!note) return;
+    const meta=clusterWards(d.rows.map(r=>({...r}))).slice(0,40);
+    const inMeta=wo.filter(c=>meta.some(m=>Math.hypot(m.x-c.x,m.y-c.y)<=4)).reduce((a,c)=>a+c.n,0), share=Math.round(100*inMeta/nObs);
+    note.innerHTML = `<b>${share}%</b> твоих observer'ов стоят в топ-40 метовых точках про-игроков. `+(share<35?'Это мало: про ставят обзор в одни и те же сильные места — загляни во вкладку «Варды».':share>=60?'Отлично, ты используешь метовые точки.':'Нормально, но есть куда расти — загляни во вкладку «Варды».');
+  }).catch(()=>{});
+}
+
+$('pGo').onclick = ()=>loadPlayer();
+$('pId').addEventListener('keydown', e=>{ if(e.key==='Enter') loadPlayer(); });
+['pPeriod','pRanked'].forEach(i=>$(i).addEventListener('change', ()=>{ if(P) loadPlayer(); }));
+$('pOut').addEventListener('click', e=>{
+  const rm=e.target.closest('.rm'); if(rm){ $('mId').value=rm.dataset.mid; $('mAcc').value=rm.dataset.acc; switchTab('match'); loadMatch(rm.dataset.mid, rm.dataset.acc); return; }
+  const hr=e.target.closest('tr[data-hid]'); if(hr){ $('buildHero').value=hr.dataset.hid; switchTab('builds'); loadBuild(); return; }
+  const pr=e.target.closest('tr[data-pacc]'); if(pr){ $('pId').value=pr.dataset.pacc; loadPlayer(); window.scrollTo(0,0); }
+});
+window.addEventListener('resize', ()=>{ const cv=$('pHeatCv'); if(cv&&P) paintHeat(cv,{obs:wardmapCells(P.wardmap&&P.wardmap.obs), sen:wardmapCells(P.wardmap&&P.wardmap.sen)}); });
+try{ const a=localStorage.getItem('dm_acc'); if(a) $('pId').value=a; }catch(e){}
 
 // ---------- UI ----------
 function switchTab(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
-  ['duos','builds','heroes','wards','match'].forEach(x=>$('tab-'+x).hidden = x!==t);
+  ['duos','builds','heroes','wards','match','player'].forEach(x=>$('tab-'+x).hidden = x!==t);
   if(t==='wards' && S.start) loadWards();
+  if(t==='player' && S.start && !P && $('pId').value.trim()) loadPlayer();
   try{ localStorage.setItem('dm_tab', t); }catch(e){}
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
@@ -911,7 +1194,9 @@ $('duoList').addEventListener('click', e=>{ /* клик по герою — от
   $('buildHero').value=el.dataset.id; switchTab('builds'); loadBuild();
 });
 try{ const t=localStorage.getItem('dm_tab'); if(t) switchTab(t); }catch(e){}
-init();
+const hashPlayer = location.hash.match(/player=(\d+)/);
+if(hashPlayer){ $('pId').value=hashPlayer[1]; switchTab('player'); }
+init().then(()=>{ if(hashPlayer) loadPlayer(); });
 </script>
 </body>
 </html>
