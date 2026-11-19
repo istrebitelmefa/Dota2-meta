@@ -157,7 +157,7 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
     <div class="bar">
       <label>Пары
         <select id="duoMode">
-          <option value="cs">Керри + 5 (лёгкая линия)</option>
+          <option value="cs">Керри (1) + 5</option>
           <option value="ss">4 + 5 (два саппорта)</option>
         </select>
       </label>
@@ -248,8 +248,8 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
 
   <div class="note">
     Данные: OpenDota (про-матчи выбранного патча; паблик-винрейт — ранги Divine/Immortal за последние дни).
-    Связка = два героя одной команды на лёгкой линии: керри — тот, у кого выше GPM. «Надёжный винрейт» — нижняя граница доверительного интервала, он не даёт связкам с 6 играми и 100% подняться наверх.
-    Пары 4 + 5: в каждой команде берутся два игрока с наименьшим GPM — 5-ка с самым низким, 4-ка со вторым по величине.
+    Связка = керри (позиция 1) и 5-ка одной команды. «Надёжный винрейт» — нижняя граница доверительного интервала, он не даёт связкам с 6 играми и 100% подняться наверх.
+    Позиции: саппорты — двое в команде с наименьшими добиваниями к 10-й минуте; из них 5 — стоявший на лёгкой линии, 4 — на сложной. Коры — по линии: лёгкая — 1, мид — 2, сложная — 3.
     Варды: позиции из логов установки в про-матчах (последние 2000 матчей периода). Соседние точки объединяются в «центряк» — средневзвешенный центр популярного места; цифра на кружке — его место в топе.
     «Синергия» — насколько винрейт связки выше среднего винрейта этих героев по отдельности.
     Винрейт предметов завышен у поздних слотов (их чаще собирают в выигранных играх), поэтому лучшая сборка выбирается среди популярных предметов, а не только по винрейту.
@@ -317,6 +317,24 @@ function fillPatchSelect(){
     return `<option value="${i}">${esc(p.name)}${i===ps.length-1?' (новый)':''}</option>`; }).reverse().join('');
 }
 const MIN_PATCH_MATCHES = 400;
+// CTE «pp»: игроки про-матчей выбранного периода с позицией 1–5.
+// Саппорты — двое с наименьшими добиваниями к 10-й минуте (lh_t[11]; без парсинга — итоговые добивания);
+// из них 5 — на лёгкой линии, 4 — на сложной (иначе 5 — с меньшим GPM). Коры — по линии: лёгкая 1, мид 2, сложная 3.
+function posCTE(extraWhere=''){
+  return `WITH b AS (
+      SELECT pm.match_id, pm.hero_id, pm.player_slot, (pm.player_slot<128) rad, ((pm.player_slot<128)=m.radiant_win)::int win,
+             pm.lane_role, pm.gold_per_min, pm.deaths, m.duration, pm.obs_log IS NOT NULL parsed,
+             coalesce(cardinality(pm.obs_log),0) o, coalesce(cardinality(pm.sen_log),0) s, coalesce(pm.lh_t[11], pm.last_hits, 0) lh,
+             row_number() OVER (PARTITION BY pm.match_id, (pm.player_slot<128) ORDER BY coalesce(pm.lh_t[11], pm.last_hits, 0) ASC, pm.gold_per_min ASC, pm.player_slot) farm
+      FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
+      WHERE m.start_time BETWEEN ${periodStart()} AND ${periodEnd()} ${extraWhere}),
+    pp AS (
+      SELECT b.*, CASE WHEN farm<=2
+          THEN 6 - row_number() OVER (PARTITION BY match_id, rad, farm<=2 ORDER BY CASE lane_role WHEN 1 THEN 0 WHEN 3 THEN 2 ELSE 1 END, gold_per_min ASC, player_slot)
+          ELSE row_number() OVER (PARTITION BY match_id, rad, farm<=2 ORDER BY CASE lane_role WHEN 1 THEN 0 WHEN 2 THEN 1 WHEN 3 THEN 2 ELSE 3 END, lh DESC, player_slot)
+        END pos
+      FROM b)`;
+}
 
 // ---------- init ----------
 async function init(force=false){
@@ -366,12 +384,10 @@ async function loadPeriod(force=false){
       sql(`SELECT pm.hero_id, count(*) n, sum(((pm.player_slot<128)=m.radiant_win)::int) w
            FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
            WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} GROUP BY 1`, !force),
-      sql(`SELECT c.hero_id carry, s.hero_id sup, count(*) n, sum(((c.player_slot<128)=m.radiant_win)::int) w
-           FROM matches m
-           JOIN player_matches c ON c.match_id=m.match_id
-           JOIN player_matches s ON s.match_id=m.match_id
-           WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} AND c.lane_role=1 AND s.lane_role=1
-             AND (c.player_slot<128)=(s.player_slot<128) AND c.gold_per_min>s.gold_per_min
+      sql(`${posCTE()}
+           SELECT c.hero_id carry, s.hero_id sup, count(*) n, sum(c.win) w
+           FROM pp c JOIN pp s ON s.match_id=c.match_id AND s.rad=c.rad
+           WHERE c.pos=1 AND s.pos=5
            GROUP BY 1,2 HAVING count(*)>=3 ORDER BY n DESC LIMIT 1500`, !force),
       sql(`SELECT count(*) n FROM matches WHERE start_time BETWEEN ${st} AND ${periodEnd()}`, !force),
       S.heroStats ? Promise.resolve(S.heroStats) : getJSON('heroStats', !force).catch(()=>null)
@@ -399,15 +415,10 @@ async function loadDuos45(force=false){
   const tok=++duo45Token, st=periodStart();
   $('duoList').innerHTML='<div class="msg"><span class="spin"></span>Считаю пары 4 + 5 по про-матчам…</div>';
   try{
-    // в каждой команде: rk=1 — самый низкий GPM (5-ка), rk=2 — второй (4-ка)
-    const rows = await sql(`WITH p AS (
-        SELECT pm.match_id, pm.hero_id, (pm.player_slot<128) rad, ((pm.player_slot<128)=m.radiant_win)::int win,
-               row_number() OVER (PARTITION BY pm.match_id, (pm.player_slot<128) ORDER BY pm.gold_per_min ASC, pm.player_slot) rk
-        FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
-        WHERE m.start_time BETWEEN ${st} AND ${periodEnd()})
+    const rows = await sql(`${posCTE()}
       SELECT a.hero_id carry, b.hero_id sup, count(*) n, sum(a.win) w
-      FROM p a JOIN p b ON b.match_id=a.match_id AND b.rad=a.rad
-      WHERE a.rk=2 AND b.rk=1
+      FROM pp a JOIN pp b ON b.match_id=a.match_id AND b.rad=a.rad
+      WHERE a.pos=4 AND b.pos=5
       GROUP BY 1,2 HAVING count(*)>=3 ORDER BY n DESC LIMIT 1500`, !force);
     if(tok!==duo45Token) return;
     S.duos45 = rows.map(r=>({carry:r.carry, sup:r.sup, n:+r.n, w:+r.w}));
@@ -765,36 +776,36 @@ async function requestParse(id){
   }catch(e){ box.innerHTML='<span class="b">'+esc(e.message)+'</span>'; }
 }
 
-// позиции 1–5: по GPM внутри команды, две самые бедные — 5 и 4, у корок — по линии
+// позиции 1–5 (та же логика, что в posCTE): саппорты — двое с наименьшими добиваниями к 10-й минуте,
+// 5 — на лёгкой линии, 4 — на сложной/в роуме; коры — по линии (лёгкая 1, мид 2, сложная 3), спорные — по фарму.
 function positions(m){
   const pos={};
+  const lh10 = p => Array.isArray(p.lh_t) && p.lh_t.length>10 ? p.lh_t[10] : (p.last_hits||0);
+  const lr = p => p.lane_role || 0;
   [true,false].forEach(rad=>{
-    const team=m.players.filter(p=>(p.player_slot<128)===rad).sort((a,b)=>(b.gold_per_min||0)-(a.gold_per_min||0));
+    const team=m.players.filter(p=>(p.player_slot<128)===rad);
     if(team.length<5) return;
-    pos[team[4].player_slot]=5; pos[team[3].player_slot]=4;
-    const cores=team.slice(0,3), left=[1,2,3];
-    const want = p => p.lane_role===2 ? 2 : p.lane_role===3 ? 3 : p.lane_role===1 ? 1 : 0;
-    cores.forEach(p=>{ const w=want(p); if(w && left.includes(w)){ pos[p.player_slot]=w; left.splice(left.indexOf(w),1); } });
-    cores.forEach(p=>{ if(!pos[p.player_slot]) pos[p.player_slot]=left.shift(); });
+    const byFarm=team.slice().sort((a,b)=>lh10(a)-lh10(b) || (a.gold_per_min||0)-(b.gold_per_min||0) || a.player_slot-b.player_slot);
+    const sups=byFarm.slice(0,2), cores=byFarm.slice(2);
+    const sKey = p => (lr(p)===1?0 : lr(p)===3||p.is_roaming?2 : 1);
+    sups.sort((a,b)=>sKey(a)-sKey(b) || (a.gold_per_min||0)-(b.gold_per_min||0) || a.player_slot-b.player_slot);
+    pos[sups[0].player_slot]=5; pos[sups[1].player_slot]=4;
+    const left=[1,2,3], byLhDesc=cores.slice().sort((a,b)=>lh10(b)-lh10(a));
+    [[2,2],[1,1],[3,3]].forEach(([role,ps])=>{ const c=byLhDesc.find(p=>lr(p)===role && !pos[p.player_slot]); if(c){ pos[c.player_slot]=ps; left.splice(left.indexOf(ps),1); } });
+    byLhDesc.forEach(p=>{ if(!pos[p.player_slot]) pos[p.player_slot]=left.shift(); });
   });
   return pos;
 }
 
-// средние значения про-игроков по позициям (5 — rk1, 4 — rk2, корки — rk3..5) за текущий период
+// средние значения про-игроков по позициям 1–5 за выбранный период
 async function fetchPosAvg(){
   if(S.posAvg) return S.posAvg;
-  const st=periodStart();
-  const rows = await sql(`WITH p AS (
-      SELECT m.duration d, pm.deaths, coalesce(cardinality(pm.obs_log),0) o, coalesce(cardinality(pm.sen_log),0) s,
-             row_number() OVER (PARTITION BY pm.match_id, (pm.player_slot<128) ORDER BY pm.gold_per_min ASC, pm.player_slot) rk
-      FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
-      WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} AND m.duration>900 AND pm.obs_log IS NOT NULL)
-    SELECT rk, count(*) n, avg(o*600.0/d) o10, avg(s*600.0/d) s10, avg(deaths*600.0/d) d10 FROM p GROUP BY rk ORDER BY rk`);
+  const rows = await sql(`${posCTE('AND m.duration>900 AND pm.obs_log IS NOT NULL')}
+    SELECT pos, count(*) n, avg(o*600.0/duration) o10, avg(s*600.0/duration) s10, avg(deaths*600.0/duration) d10 FROM pp GROUP BY pos ORDER BY pos`);
   S.posAvg = {};
-  rows.forEach(r=>{ S.posAvg[+r.rk]={o10:+r.o10, s10:+r.s10, d10:+r.d10, n:+r.n}; });
+  rows.forEach(r=>{ S.posAvg[+r.pos]={o10:+r.o10, s10:+r.s10, d10:+r.d10, n:+r.n}; });
   return S.posAvg;
 }
-const posRk = pos => pos===5?1 : pos===4?2 : null;
 
 function renderMatch(){
   const m=M.m, parsed=isParsed(m), pos=positions(m);
@@ -831,7 +842,7 @@ async function analyzePlayer(){
   if(tok!==matchToken || m!==M.m || p!==M.m.players[M.sel]) return;
   const dur=m.duration, min=dur/60, F=[]; // {lvl:'bad'|'warn'|'good', t, d}
   const add=(lvl,t,d)=>F.push({lvl,t,d});
-  const isSup = pos>=4, pa = posAvg && posRk(pos) ? posAvg[posRk(pos)] : (posAvg ? avgCores(posAvg) : null);
+  const isSup = pos>=4, pa = posAvg && pos ? (posAvg[pos]||null) : null;
 
   // --- смерти
   const heroKey = S.heroes[p.hero_id] && S.heroes[p.hero_id].name;
@@ -957,8 +968,6 @@ async function analyzePlayer(){
     ${posAvg?'':'Средние по позициям не загрузились — часть проверок пропущена.'} ${G<8?'Мало про-игр на этом герое — тайминги предметов не сравнивались.':''}</div>`;
   out.innerHTML = html;
 }
-function avgCores(pa){ const ks=[3,4,5].filter(k=>pa[k]); if(!ks.length) return null;
-  const r={}; ['o10','s10','d10'].forEach(f=>r[f]=ks.reduce((a,k)=>a+pa[k][f],0)/ks.length); return r; }
 
 $('mGo').onclick = ()=>{ const id=parseMatchInput($('mId').value); if(!id){ $('mOut').innerHTML='<div class="err">Вставь номер матча или ссылку на него (OpenDota, Dotabuff, Stratz).</div>'; return; } loadMatch(id, parseAccount($('mAcc').value)); };
 $('mId').addEventListener('keydown', e=>{ if(e.key==='Enter') $('mGo').click(); });
@@ -982,7 +991,7 @@ const clamp = v => Math.max(-1, Math.min(1, v));
 // оценка игрока 0–10 из нескольких компонент, каждая в [-1;1], с учётом позиции
 function ratePlayer(m, p, pos, posAvg){
   const dur=m.duration, min=dur/60, rad=p.player_slot<128, isSup=pos>=4, parsed=isParsed(m);
-  const pa = posAvg ? (posRk(pos) ? posAvg[posRk(pos)] : avgCores(posAvg)) : null;
+  const pa = posAvg && pos ? (posAvg[pos]||null) : null;
   const comps=[], pros=[], cons=[];
   const C=(w,c,good,bad)=>{ comps.push({w,c}); if(c>=0.4 && good) pros.push(good); if(c<=-0.4 && bad) cons.push(bad); };
   // 1. показатели против других игроков на этом же герое (процентили OpenDota)
