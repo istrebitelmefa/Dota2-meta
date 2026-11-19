@@ -18,7 +18,8 @@
 
 ## Данные
 - Всё грузится в браузере из OpenDota API (`https://api.opendota.com/api/`), CORS открыт.
-- Текущий патч: последний элемент `/constants/patch` (сейчас 7.41, с 24.03.2026, ~8.9k про-матчей).
+- Патчи: `/constants/patch` (без кэша). Селектор «Патч» — последние 4; выбранный патч = окно `[S.start; S.end)` (конец — выход следующего), во всех SQL `start_time BETWEEN ${st} AND ${periodEnd()}`. Если на новейшем патче < 400 про-матчей — автоматически показывается прошлый с плашкой «Показать новый всё равно» (выбор запоминается в `dm_patch_pick`).
+- OpenDota добавляет новый патч в `/constants/patch` с задержкой (источник — репозиторий odota/dotaconstants, `build/patch.json`); на 19.11.2026 там последний 7.41. Сайт подхватит новый патч сам. Карта вардов — `map_740.webp`; при изменении карты взять новую из odota/web `public/assets/images/dota2/map/`.
 - Связки и сборки считаются SQL через `/explorer?sql=` (только про-матчи; паб-данных по связкам у OpenDota нет).
 - Константы героев/предметов: `/constants/heroes`, `/constants/items`; картинки с `cdn.cloudflare.steamstatic.com`.
 - Кэш ответов в localStorage на 1 час.

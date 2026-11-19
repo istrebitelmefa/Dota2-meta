@@ -120,6 +120,7 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
 .rkr{flex:0 0 56px;text-align:right}.rkv{font-size:20px;font-weight:700}
 .rkbar{height:5px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-top:3px}.rkbar div{height:100%;background:var(--mut)}
 @media (max-width:420px){.rk img{width:44px;height:25px;flex-basis:44px}.rk .rank{display:none}}
+.pnote{margin-bottom:12px;border-color:var(--gold);line-height:1.6}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--mut);border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes s{to{transform:rotate(360deg)}}
 </style>
@@ -139,10 +140,12 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
 </header>
 <main>
   <div id="globalErr"></div>
+  <div id="patchNote"></div>
   <div class="bar">
+    <label>Патч <select id="patchSel"></select></label>
     <label>Период
       <select id="period">
-        <option value="patch">Весь текущий патч</option>
+        <option value="patch">Весь патч</option>
         <option value="60">Последние 60 дней</option>
         <option value="30">Последние 30 дней</option>
       </select>
@@ -244,7 +247,7 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
   </section>
 
   <div class="note">
-    Данные: OpenDota (про-матчи текущего патча; паблик-винрейт — ранги Divine/Immortal за последние дни).
+    Данные: OpenDota (про-матчи выбранного патча; паблик-винрейт — ранги Divine/Immortal за последние дни).
     Связка = два героя одной команды на лёгкой линии: керри — тот, у кого выше GPM. «Надёжный винрейт» — нижняя граница доверительного интервала, он не даёт связкам с 6 играми и 100% подняться наверх.
     Пары 4 + 5: в каждой команде берутся два игрока с наименьшим GPM — 5-ка с самым низким, 4-ка со вторым по величине.
     Варды: позиции из логов установки в про-матчах (последние 2000 матчей периода). Соседние точки объединяются в «центряк» — средневзвешенный центр популярного места; цифра на кружке — его место в топе.
@@ -294,20 +297,50 @@ const heroName = id => S.heroes[id] ? S.heroes[id].localized_name : ('#'+id);
 const itemImg = k => S.items[k] && S.items[k].img ? CDN+S.items[k].img : '';
 const itemName = k => S.items[k] ? (S.items[k].dname||k) : k;
 
+// выбранный патч: [S.start; S.end), S.end — выход следующего патча (для текущего — «бесконечность»)
+const T_MAX = 2147483647, patchTs = p => Math.floor(new Date(p.date).getTime()/1000);
+function periodEnd(){ return S.end || T_MAX; }
 function periodStart(){
   const v=$('period').value;
   if(v==='patch') return S.start;
-  return Math.max(S.start, Math.floor(Date.now()/1000) - (+v)*86400);
+  const end = Math.min(periodEnd(), Math.floor(Date.now()/1000));
+  return Math.max(S.start, end - (+v)*86400);
 }
+function selectPatch(i){
+  const ps=S.patches; i=Math.max(0, Math.min(ps.length-1, i));
+  S.patchIdx=i; S.patch=ps[i]; S.start=patchTs(ps[i]); S.end = i<ps.length-1 ? patchTs(ps[i+1]) : 0;
+  $('patchSel').value=String(i);
+}
+function fillPatchSelect(){
+  const ps=S.patches, from=Math.max(0, ps.length-4);
+  $('patchSel').innerHTML = ps.slice(from).map((p,k)=>{ const i=from+k;
+    return `<option value="${i}">${esc(p.name)}${i===ps.length-1?' (новый)':''}</option>`; }).reverse().join('');
+}
+const MIN_PATCH_MATCHES = 400;
 
 // ---------- init ----------
 async function init(force=false){
   $('globalErr').innerHTML='';
   try{
     const [patches, heroes, items] = await Promise.all([
-      getJSON('constants/patch', !force), getJSON('constants/heroes', !force), getJSON('constants/items', !force)]);
-    const last = patches[patches.length-1];
-    S.patch = last; S.start = Math.floor(new Date(last.date).getTime()/1000);
+      getJSON('constants/patch', false), getJSON('constants/heroes', !force), getJSON('constants/items', !force)]);
+    S.patches = patches.filter(p=>p && p.date && p.name);
+    fillPatchSelect();
+    const lastI=S.patches.length-1;
+    selectPatch(lastI);
+    $('patchNote').innerHTML='';
+    // новый патч только вышел и про-матчей мало — показываем прошлый, пока не наберётся статистика
+    let manual=null; try{ manual=localStorage.getItem('dm_patch_pick'); }catch(e){}
+    if(lastI>0 && manual!==S.patches[lastI].name){
+      const cnt = await sql(`SELECT count(*) n FROM matches WHERE start_time>=${S.start}`, !force).catch(()=>null);
+      const n = cnt && cnt[0] ? +cnt[0].n : null;
+      if(n!=null && n<MIN_PATCH_MATCHES){
+        const np=S.patches[lastI], days=Math.max(0, Math.floor((Date.now()/1000-S.start)/86400));
+        selectPatch(lastI-1);
+        $('patchNote').innerHTML = `<div class="card pnote">🆕 Вышел патч <b>${esc(np.name)}</b> (${days?days+' дн. назад':'сегодня'}). Про-матчей на нём пока ${n} — для статистики мало, поэтому показан патч <b>${esc(S.patch.name)}</b>.
+          <button class="btn sec" id="showNewPatch" style="margin-left:6px;padding:4px 10px">Показать ${esc(np.name)} всё равно</button></div>`;
+      }
+    }
     S.heroes = {}; Object.values(heroes).forEach(h=>S.heroes[h.id]=h);
     S.items = items; S.itemById = {}; Object.entries(items).forEach(([k,v])=>{ if(v.id!=null) S.itemById[v.id]=k; });
     fillHeroSelect();
@@ -332,15 +365,15 @@ async function loadPeriod(force=false){
     const [heroPro, duos, totals, heroStats] = await Promise.all([
       sql(`SELECT pm.hero_id, count(*) n, sum(((pm.player_slot<128)=m.radiant_win)::int) w
            FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
-           WHERE m.start_time>=${st} GROUP BY 1`, !force),
+           WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} GROUP BY 1`, !force),
       sql(`SELECT c.hero_id carry, s.hero_id sup, count(*) n, sum(((c.player_slot<128)=m.radiant_win)::int) w
            FROM matches m
            JOIN player_matches c ON c.match_id=m.match_id
            JOIN player_matches s ON s.match_id=m.match_id
-           WHERE m.start_time>=${st} AND c.lane_role=1 AND s.lane_role=1
+           WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} AND c.lane_role=1 AND s.lane_role=1
              AND (c.player_slot<128)=(s.player_slot<128) AND c.gold_per_min>s.gold_per_min
            GROUP BY 1,2 HAVING count(*)>=3 ORDER BY n DESC LIMIT 1500`, !force),
-      sql(`SELECT count(*) n FROM matches WHERE start_time>=${st}`, !force),
+      sql(`SELECT count(*) n FROM matches WHERE start_time BETWEEN ${st} AND ${periodEnd()}`, !force),
       S.heroStats ? Promise.resolve(S.heroStats) : getJSON('heroStats', !force).catch(()=>null)
     ]);
     S.heroStats = heroStats;
@@ -350,7 +383,7 @@ async function loadPeriod(force=false){
     S.duos = duos.map(r=>({carry:r.carry, sup:r.sup, n:+r.n, w:+r.w}));
     S.duos45 = null; S.wards = {}; S.posAvg = null;
     const nm = totals[0] ? totals[0].n : '?';
-    const from = new Date(st*1000).toLocaleDateString('ru-RU');
+    const from = new Date(st*1000).toLocaleDateString('ru-RU') + (S.end ? ' по '+new Date(S.end*1000).toLocaleDateString('ru-RU') : '');
     $('patchInfo').innerHTML = `Патч <b>${esc(S.patch.name)}</b> · про-матчей в выборке: <b>${nm}</b> · с ${from} · обновлено ${new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}`;
     renderDuos(); renderHeroes();
     if($('duoMode').value==='ss') loadDuos45(force);
@@ -371,7 +404,7 @@ async function loadDuos45(force=false){
         SELECT pm.match_id, pm.hero_id, (pm.player_slot<128) rad, ((pm.player_slot<128)=m.radiant_win)::int win,
                row_number() OVER (PARTITION BY pm.match_id, (pm.player_slot<128) ORDER BY pm.gold_per_min ASC, pm.player_slot) rk
         FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
-        WHERE m.start_time>=${st})
+        WHERE m.start_time BETWEEN ${st} AND ${periodEnd()})
       SELECT a.hero_id carry, b.hero_id sup, count(*) n, sum(a.win) w
       FROM p a JOIN p b ON b.match_id=a.match_id AND b.rad=a.rad
       WHERE a.rk=2 AND b.rk=1
@@ -457,10 +490,10 @@ const heroItemRows = (id, st) => sql(`SELECT x.k, count(*) n, sum(x.win) w, avg(
                SELECT p.match_id, e->>'key' k, min((e->>'time')::int) t, max(((p.player_slot<128)=m.radiant_win)::int) win
                FROM player_matches p JOIN matches m ON m.match_id=p.match_id
                CROSS JOIN LATERAL unnest(p.purchase_log) e
-               WHERE m.start_time>=${st} AND p.hero_id=${id} GROUP BY 1,2) x
+               WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} AND p.hero_id=${id} GROUP BY 1,2) x
              GROUP BY 1 ORDER BY n DESC LIMIT 120`);
 const heroItemBase = (id, st) => sql(`SELECT count(*) n, sum(((p.player_slot<128)=m.radiant_win)::int) w FROM player_matches p JOIN matches m ON m.match_id=p.match_id
-             WHERE m.start_time>=${st} AND p.hero_id=${id} AND p.purchase_log IS NOT NULL`);
+             WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} AND p.hero_id=${id} AND p.purchase_log IS NOT NULL`);
 let buildToken=0;
 async function loadBuild(){
   const id=+$('buildHero').value; if(!id){ $('buildOut').innerHTML='<div class="msg">Выбери героя</div>'; return; }
@@ -479,10 +512,10 @@ async function loadBuild(){
       [rows, base] = await Promise.all([
         sql(`SELECT it AS id, count(*) n, sum(win) w FROM (
                SELECT unnest(ARRAY[p.item_0,p.item_1,p.item_2,p.item_3,p.item_4,p.item_5]) it, ((p.player_slot<128)=m.radiant_win)::int win
-               FROM player_matches p JOIN matches m ON m.match_id=p.match_id WHERE m.start_time>=${st} AND p.hero_id=${id}) x
+               FROM player_matches p JOIN matches m ON m.match_id=p.match_id WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} AND p.hero_id=${id}) x
              WHERE it>0 GROUP BY 1 ORDER BY n DESC LIMIT 80`),
         sql(`SELECT count(*) n, sum(((p.player_slot<128)=m.radiant_win)::int) w FROM player_matches p JOIN matches m ON m.match_id=p.match_id
-             WHERE m.start_time>=${st} AND p.hero_id=${id}`)
+             WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} AND p.hero_id=${id}`)
       ]);
       rows = rows.map(r=>({k:S.itemById[r.id], n:r.n, w:r.w, t:null, s:0})).filter(r=>r.k);
     }
@@ -496,7 +529,7 @@ function renderBuild(id, rows, base, mode){
   const head = `<div class="card hsel"><img src="${heroImg(id)}" alt=""><div><div style="font-size:18px;font-weight:600">${esc(heroName(id))}</div>
      <div class="small">${G} про-игр в выборке · общий винрейт <b class="${cls(baseWR)}">${fmtPct(baseWR)}</b></div>
      <div class="small">${mode==='timeline'?'Анализ по логам покупок (время и порядок)':'Анализ по итоговому инвентарю (логи покупок недоступны)'}</div></div></div>`;
-  if(G<5){ $('buildOut').innerHTML = head+'<div class="msg">Слишком мало игр на герое в этом периоде — выбери «Весь текущий патч».</div>'; return; }
+  if(G<5){ $('buildOut').innerHTML = head+'<div class="msg">Слишком мало игр на герое в этом периоде — выбери «Весь патч» или прошлый патч.</div>'; return; }
   rows.forEach(r=>{ r.n=+r.n; r.w=+r.w; r.s=+r.s||0; r.pick=r.n/G; r.wr=pct(r.w,r.n); r.delta=r.wr-baseWR; r.score=wilson(r.w,r.n); });
 
   const start = mode==='timeline' ? rows.filter(r=>r.s/G>=0.2 && !r.k.startsWith('recipe_')).sort((a,b)=>b.s-a.s).slice(0,7) : [];
@@ -560,7 +593,7 @@ function fetchWardData(type, force=false){
   const st=periodStart();
   const pr = (async()=>{
     const [rows, tot] = await Promise.all([
-      sql(`WITH mm AS (SELECT match_id, radiant_win FROM matches WHERE start_time>=${st} ORDER BY match_id DESC LIMIT 2000)
+      sql(`WITH mm AS (SELECT match_id, radiant_win FROM matches WHERE start_time BETWEEN ${st} AND ${periodEnd()} ORDER BY match_id DESC LIMIT 2000)
         SELECT (pm.player_slot<128)::int rad,
                CASE WHEN (e->>'time')::int<0 THEN -1 WHEN (e->>'time')::int<600 THEN 0 WHEN (e->>'time')::int<1200 THEN 1 WHEN (e->>'time')::int<2100 THEN 2 ELSE 3 END tb,
                round((e->>'x')::numeric)::int x, round((e->>'y')::numeric)::int y,
@@ -569,7 +602,7 @@ function fetchWardData(type, force=false){
         CROSS JOIN LATERAL unnest(pm.${type}_log) e
         WHERE pm.${type}_log IS NOT NULL
         GROUP BY 1,2,3,4 HAVING count(*)>=2`, !force),
-      sql(`SELECT count(DISTINCT pm.match_id) n FROM (SELECT match_id FROM matches WHERE start_time>=${st} ORDER BY match_id DESC LIMIT 2000) mm
+      sql(`SELECT count(DISTINCT pm.match_id) n FROM (SELECT match_id FROM matches WHERE start_time BETWEEN ${st} AND ${periodEnd()} ORDER BY match_id DESC LIMIT 2000) mm
            JOIN player_matches pm ON pm.match_id=mm.match_id WHERE pm.${type}_log IS NOT NULL`, !force)
     ]);
     S.wards[type] = {rows: rows.map(r=>({rad:+r.rad, tb:+r.tb, x:+r.x, y:+r.y, n:+r.n, w:+r.w, ts:+r.ts})), games: +(tot[0]&&tot[0].n)||0};
@@ -755,7 +788,7 @@ async function fetchPosAvg(){
       SELECT m.duration d, pm.deaths, coalesce(cardinality(pm.obs_log),0) o, coalesce(cardinality(pm.sen_log),0) s,
              row_number() OVER (PARTITION BY pm.match_id, (pm.player_slot<128) ORDER BY pm.gold_per_min ASC, pm.player_slot) rk
       FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
-      WHERE m.start_time>=${st} AND m.duration>900 AND pm.obs_log IS NOT NULL)
+      WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} AND m.duration>900 AND pm.obs_log IS NOT NULL)
     SELECT rk, count(*) n, avg(o*600.0/d) o10, avg(s*600.0/d) s10, avg(deaths*600.0/d) d10 FROM p GROUP BY rk ORDER BY rk`);
   S.posAvg = {};
   rows.forEach(r=>{ S.posAvg[+r.rk]={o10:+r.o10, s10:+r.s10, d10:+r.d10, n:+r.n}; });
@@ -919,7 +952,7 @@ async function analyzePlayer(){
                    : '<div class="msg">Явных ошибок не нашёл.</div>';
   if(deaths.length) html += `<div class="sec-h">Смерти от героев</div><div class="items">`+deaths.map(d=>`<div class="item"><img src="${heroImg(d.by)}" alt="">${fmtTime(d.t)}<div class="t">${esc(heroName(d.by))}</div></div>`).join('')+'</div>';
   html += wardsHtml;
-  html += `<div class="note">Разбор автоматический: сравнение с про-матчами текущего патча (средние по позиции, тайминги предметов на этом герое) и процентилями OpenDota.
+  html += `<div class="note">Разбор автоматический: сравнение с про-матчами выбранного патча (средние по позиции, тайминги предметов на этом герое) и процентилями OpenDota.
     Это подсказки, а не приговор: поздний предмет может быть оправдан ходом игры, а смерть — удачным разменом.
     ${posAvg?'':'Средние по позициям не загрузились — часть проверок пропущена.'} ${G<8?'Мало про-игр на этом герое — тайминги предметов не сравнивались.':''}</div>`;
   out.innerHTML = html;
@@ -1278,6 +1311,13 @@ $('wardType').addEventListener('change', ()=>loadWards());
 ['wardSide','wardTime','wardTop','wardHeatChk'].forEach(i=>$(i).addEventListener('input', renderWards));
 window.addEventListener('resize', ()=>{ if(!$('tab-wards').hidden) drawHeat(); });
 $('period').addEventListener('change', ()=>loadPeriod());
+function onPatchChange(i){
+  selectPatch(i); $('patchNote').innerHTML='';
+  try{ localStorage.setItem('dm_patch_pick', S.patch.name); }catch(e){}
+  S.posAvg=null; loadPeriod();
+}
+$('patchSel').addEventListener('change', ()=>onPatchChange(+$('patchSel').value));
+$('patchNote').addEventListener('click', e=>{ if(e.target.id==='showNewPatch') onPatchChange(S.patches.length-1); });
 $('reload').onclick = ()=>init(true);
 $('duoList').addEventListener('click', e=>{ /* клик по герою — открыть его сборку */
   const el=e.target.closest('.hero[data-id]'); if(!el) return;
