@@ -121,6 +121,15 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
 .rkbar{height:5px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-top:3px}.rkbar div{height:100%;background:var(--mut)}
 @media (max-width:420px){.rk img{width:44px;height:25px;flex-basis:44px}.rk .rank{display:none}}
 .pnote{margin-bottom:12px;border-color:var(--gold);line-height:1.6}
+.pnotes{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-top:8px}
+.pnotes summary{cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap;list-style:none}
+.pnotes summary::-webkit-details-marker{display:none}
+.pnotes summary::before{content:'▸';color:var(--mut)}.pnotes[open] summary::before{content:'▾'}
+.pnotes summary img{width:44px;height:25px;object-fit:cover;border-radius:3px}
+.pnotes ul,.plain{margin:6px 0 0;padding-left:18px;line-height:1.5;font-size:13px}
+.pnotes li.sub,.plain li.sub{list-style:none;margin:8px 0 2px -18px;font-weight:600;color:var(--gold)}
+.pnotes li.sp,.plain li.sp{list-style:none;height:6px}
+.pa{margin-top:8px}.pan{font-weight:600;font-size:13px}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--mut);border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes s{to{transform:rotate(360deg)}}
 </style>
@@ -133,6 +142,7 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
     <button data-tab="duos" class="on">Связки</button>
     <button data-tab="builds">Сборки</button>
     <button data-tab="heroes">Герои патча</button>
+    <button data-tab="notes">Изменения патча</button>
     <button data-tab="wards">Варды</button>
     <button data-tab="match">Разбор матча</button>
     <button data-tab="player">Игрок</button>
@@ -228,6 +238,16 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
     <div class="mrow"><input type="text" id="mAcc" inputmode="numeric" placeholder="Твой Steam ID или Friend ID — покажу последние матчи"><button class="btn sec" id="mAccGo">Мои матчи</button></div>
     <div id="mRecent"></div>
     <div id="mOut"><div class="msg">Вставь номер матча или введи свой ID, чтобы выбрать из последних игр.<br>Разбор ищет типичные ошибки: смерти, проигранная линия, поздние предметы, мало вижна, быстро снятые варды.</div></div>
+  </section>
+
+  <section id="tab-notes" hidden>
+    <div class="bar">
+      <label>Изменения в патче <select id="notesPatch"></select></label>
+      <label>Поиск <input type="text" id="notesSearch" placeholder="герой или предмет"></label>
+    </div>
+    <div class="seg" id="notesSeg" style="margin:0 0 12px"><button data-nv="heroes" class="on">Герои</button><button data-nv="items">Предметы</button><button data-nv="general">Общие</button></div>
+    <div id="notesOut"><div class="msg">Открой вкладку, чтобы загрузить изменения</div></div>
+    <div class="small" style="margin-top:10px">Текст изменений — официальный от Valve, на английском (через OpenDota).</div>
   </section>
 
   <section id="tab-player" hidden>
@@ -460,6 +480,7 @@ function renderDuos(){
 
 // ---------- heroes ----------
 let heroSort = {k:'n', dir:-1};
+function changedInPatch(id){ const k=PN.notes && latestMajorKey(), h=S.heroes[id]; return !!(k && h && PN.notes[k].heroes && PN.notes[k].heroes[h.name.replace('npc_dota_hero_','')]); }
 function renderHeroes(){
   if(!S.heroPro) return;
   const min=+$('heroMin').value||1, q=$('heroSearch').value.trim().toLowerCase();
@@ -470,7 +491,7 @@ function renderHeroes(){
   rows.sort((a,b)=> (typeof a[heroSort.k]==='string' ? a[heroSort.k].localeCompare(b[heroSort.k]) : a[heroSort.k]-b[heroSort.k]) * heroSort.dir);
   const th=(k,t)=>`<th data-k="${k}">${t}${heroSort.k===k?(heroSort.dir<0?' ▼':' ▲'):''}</th>`;
   $('heroTable').innerHTML = `<tr>${th('name','Герой')}${th('n','Игр (про)')}${th('pick','Пик-рейт')}${th('wr','Винрейт (про)')}${th('pub','Винрейт паб 7–8 ранг')}</tr>`+
-    rows.map(r=>`<tr data-id="${r.id}" style="cursor:pointer"><td><img src="${heroImg(r.id)}" alt="" loading="lazy">${esc(r.name)}</td><td>${r.n}</td><td>${r.pick.toFixed(1)}%</td>
+    rows.map(r=>`<tr data-id="${r.id}" style="cursor:pointer"><td><img src="${heroImg(r.id)}" alt="" loading="lazy">${esc(r.name)}${changedInPatch(r.id)?' <span class="pill" title="Герой изменён в последнем патче">изм.</span>':''}</td><td>${r.n}</td><td>${r.pick.toFixed(1)}%</td>
       <td class="${cls(r.wr)}">${fmtPct(r.wr)}</td><td class="${r.pubn?cls(r.pub):'m'}">${r.pubn?fmtPct(r.pub):'—'}</td></tr>`).join('');
 }
 $('heroTable').addEventListener('click', e=>{
@@ -579,7 +600,8 @@ function renderBuild(id, rows, base, mode){
     if(mates.length) html += `<div class="sec-h">Лучшие напарники${S.duos45?'':' по линии'}</div><div class="items">`+
       mates.map(m=>`<div class="item"><img src="${heroImg(m.other)}" alt="" loading="lazy">${esc(heroName(m.other))}<div class="t"><span class="${cls(m.wr)}">${m.wr.toFixed(0)}%</span> · ${m.n} игр</div></div>`).join('')+'</div>';
   }
-  $('buildOut').innerHTML = html;
+  $('buildOut').innerHTML = html + '<div id="buildNotes"></div>';
+  heroPatchBlock(id).then(h=>{ const el=$('buildNotes'); if(el && +$('buildHero').value===id) el.innerHTML=h; });
 }
 
 // ---------- wards ----------
@@ -1304,11 +1326,98 @@ $('pOut').addEventListener('click', e=>{
 window.addEventListener('resize', ()=>{ const cv=$('pHeatCv'); if(cv&&P) paintHeat(cv,{obs:wardmapCells(P.wardmap&&P.wardmap.obs), sen:wardmapCells(P.wardmap&&P.wardmap.sen)}); });
 try{ const a=localStorage.getItem('dm_acc'); if(a) $('pId').value=a; }catch(e){}
 
+// ---------- изменения патча ----------
+// /constants/patchnotes (~3 МБ, все патчи) и /constants/abilities (~2 МБ) — грузим по требованию и держим в памяти, не в localStorage.
+const PN = {notes:null, abil:null, pending:null};
+function loadNotes(){
+  if(PN.notes) return Promise.resolve(PN.notes);
+  if(PN.pending) return PN.pending;
+  PN.pending = (async()=>{
+    const [notes, abil] = await Promise.all([ getJSON('constants/patchnotes', false), getJSON('constants/abilities', false).catch(()=>null) ]);
+    PN.notes=notes; PN.abil=abil; return notes;
+  })();
+  PN.pending.catch(()=>{}).finally(()=>{ PN.pending=null; });
+  return PN.pending;
+}
+const noteKeys = () => Object.keys(PN.notes||{});
+const keyLabel = k => k.replace('_','.');
+const latestMajorKey = () => { const ks=noteKeys().filter(k=>/^\d+_\d+$/.test(k)); return ks[ks.length-1]; };
+const prettyKey = (k, hero) => k.replace(hero+'_','').split('_').map(w=>w? w[0].toUpperCase()+w.slice(1) : w).join(' ');
+function abilName(k, hero){
+  if(k==='general') return 'Общее'; if(k==='talents') return 'Таланты';
+  const a=PN.abil && PN.abil[k]; return a && a.dname ? a.dname : prettyKey(k, hero);
+}
+// строка из патчноутов: <span class="Subtitle"> → подзаголовок, <br> → разрыв, остальное — текст
+function noteLine(t){
+  t=String(t);
+  if(t==='<br>') return '<li class="sp"></li>';
+  const sub=t.match(/^<span class=\\?"Subtitle\\?">(.*)<\/span>$/);
+  if(sub) return `<li class="sub">${esc(sub[1])}</li>`;
+  return '<li>'+t.split('<br>').map(x=>esc(x.replace(/<[^>]+>/g,''))).join('<br>')+'</li>';
+}
+const heroByKey = k => Object.values(S.heroes).find(h=>h.name==='npc_dota_hero_'+k);
+function heroNotesHtml(key, entry){
+  if(!entry || typeof entry!=='object') return '';
+  return Object.entries(entry).map(([ak,lines])=>`<div class="pa"><div class="pan">${esc(abilName(ak,key))}</div><ul>${(lines||[]).map(noteLine).join('')}</ul></div>`).join('');
+}
+// изменения героя в последнем крупном патче — для вкладки «Сборки»
+async function heroPatchBlock(heroId){
+  try{
+    await loadNotes();
+    const k=latestMajorKey(), h=S.heroes[heroId]; if(!k || !h) return '';
+    const hk=h.name.replace('npc_dota_hero_',''), e=PN.notes[k].heroes && PN.notes[k].heroes[hk];
+    if(!e) return `<div class="small" style="margin-top:8px">В патче ${keyLabel(k)} герой не менялся.</div>`;
+    return `<details class="pnotes"><summary>Изменения героя в патче ${keyLabel(k)}</summary>${heroNotesHtml(hk,e)}</details>`;
+  }catch(e){ return ''; }
+}
+
+let notesView='heroes';
+async function renderNotes(){
+  const out=$('notesOut');
+  if(!PN.notes){
+    out.innerHTML='<div class="msg"><span class="spin"></span>Загружаю описание изменений (около 3 МБ)…</div>';
+    try{ await loadNotes(); }catch(e){ out.innerHTML='<div class="err">'+esc(e.message)+'</div>'; return; }
+    const ks=noteKeys().slice(-10).reverse();
+    $('notesPatch').innerHTML=ks.map(k=>`<option value="${k}">${keyLabel(k)}</option>`).join('');
+    $('notesPatch').value = latestMajorKey() || ks[0];
+  }
+  const k=$('notesPatch').value, N=PN.notes[k]||{}, q=$('notesSearch').value.trim().toLowerCase();
+  document.querySelectorAll('#notesSeg button').forEach(b=>b.classList.toggle('on', b.dataset.nv===notesView));
+  let html='';
+  if(notesView==='heroes'){
+    const list=Object.entries(N.heroes||{}).filter(([hk])=>hk!=='misc').map(([hk,e])=>({hk,e,h:heroByKey(hk)}))
+      .map(x=>({...x, name: x.h ? x.h.localized_name : prettyKey(hk,'')})).filter(x=>!q || x.name.toLowerCase().includes(q))
+      .sort((a,b)=>a.name.localeCompare(b.name));
+    html = `<div class="small" style="margin-bottom:8px">Изменено героев: ${list.length}. Нажми на героя, чтобы раскрыть.</div>`+
+      list.map(x=>{ const pub=x.h && S.pubWR[x.h.id], wr=pub&&pub.n?pct(pub.w,pub.n):null, nLines=Object.values(x.e).reduce((a,l)=>a+(l||[]).length,0);
+        return `<details class="pnotes pnh"><summary>${x.h?`<img src="${heroImg(x.h.id)}" alt="" loading="lazy">`:''}<b>${esc(x.name)}</b>
+          <span class="small">${nLines} изм.</span>${wr!=null?` <span class="small">· паб 7–8: <span class="${cls(wr)}">${fmtPct(wr)}</span></span>`:''}</summary>
+          ${heroNotesHtml(x.hk,x.e)}${x.h?`<button class="btn sec" data-bh="${x.h.id}" style="margin-top:8px;padding:4px 10px">Сборка героя</button>`:''}</details>`; }).join('');
+  } else if(notesView==='items'){
+    const list=Object.entries(N.items||{}).map(([ik,lines])=>({ik,lines,name:S.items[ik]?itemName(ik):prettyKey(ik,'')}))
+      .filter(x=>!q || x.name.toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name));
+    html = `<div class="small" style="margin-bottom:8px">Изменено предметов: ${list.length}.</div>`+
+      list.map(x=>`<details class="pnotes pnh"><summary>${itemImg(x.ik)?`<img src="${itemImg(x.ik)}" alt="" loading="lazy">`:''}<b>${esc(x.name)}</b>
+        ${(x.lines||[])[0]&&/^(New|Returning) Item/.test(x.lines[0])?' <span class="bdg up">новый</span>':''}</summary><ul>${(x.lines||[]).map(noteLine).join('')}</ul></details>`).join('');
+  } else {
+    const misc = N.heroes && N.heroes.misc;
+    html = `<div class="card"><ul class="plain">${(N.general||[]).filter(t=>!q||String(t).toLowerCase().includes(q)).map(noteLine).join('')||'<li>Общих изменений нет.</li>'}</ul></div>`+
+      (Array.isArray(misc)&&misc.length?`<div class="sec-h">Нейтральные предметы и крипы</div><div class="card"><ul class="plain">${misc.filter(t=>!q||String(t).toLowerCase().includes(q)).map(noteLine).join('')}</ul></div>`:'');
+  }
+  out.innerHTML = html || '<div class="msg">Ничего не найдено.</div>';
+}
+$('notesSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-nv]'); if(!b) return; notesView=b.dataset.nv; renderNotes(); });
+$('notesPatch').addEventListener('change', renderNotes);
+$('notesSearch').addEventListener('input', ()=>{ if(PN.notes) renderNotes(); });
+$('notesOut').addEventListener('click', e=>{ const b=e.target.closest('[data-bh]'); if(b){ $('buildHero').value=b.dataset.bh; switchTab('builds'); loadBuild(); } });
+
 // ---------- UI ----------
 function switchTab(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
-  ['duos','builds','heroes','wards','match','player'].forEach(x=>$('tab-'+x).hidden = x!==t);
+  ['duos','builds','heroes','notes','wards','match','player'].forEach(x=>$('tab-'+x).hidden = x!==t);
   if(t==='wards' && S.start) loadWards();
+  if(t==='notes' && S.start) renderNotes();
+  if(t==='heroes') loadNotes().then(renderHeroes).catch(()=>{});
   if(t==='player' && S.start && !P && $('pId').value.trim()) loadPlayer();
   try{ localStorage.setItem('dm_tab', t); }catch(e){}
 }
