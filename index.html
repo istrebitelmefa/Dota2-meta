@@ -269,7 +269,7 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
   <div class="note">
     Данные: OpenDota (про-матчи выбранного патча; паблик-винрейт — ранги Divine/Immortal за последние дни).
     Связка = керри (позиция 1) и 5-ка одной команды. «Надёжный винрейт» — нижняя граница доверительного интервала, он не даёт связкам с 6 играми и 100% подняться наверх.
-    Связки и средние по позициям считаются по последним 5000 про-матчам периода. Позиции: саппорты — двое в команде с наименьшими добиваниями к 10-й минуте; из них 5 — стоявший на лёгкой линии, 4 — на сложной. Коры — по линии: лёгкая — 1, мид — 2, сложная — 3.
+    Связки, сборки, герои и средние по позициям считаются по последним 5000 про-матчам выбранного периода — иначе сервер OpenDota не успевает посчитать. Позиции: саппорты — двое в команде с наименьшими добиваниями к 10-й минуте; из них 5 — стоявший на лёгкой линии, 4 — на сложной. Коры — по линии: лёгкая — 1, мид — 2, сложная — 3.
     Варды: позиции из логов установки в про-матчах (последние 2000 матчей периода). Соседние точки объединяются в «центряк» — средневзвешенный центр популярного места; цифра на кружке — его место в топе.
     «Синергия» — насколько винрейт связки выше среднего винрейта этих героев по отдельности.
     Винрейт предметов завышен у поздних слотов (их чаще собирают в выигранных играх), поэтому лучшая сборка выбирается среди популярных предметов, а не только по винрейту.
@@ -364,6 +364,8 @@ const MIN_PATCH_MATCHES = 400;
 // Саппорты — двое с наименьшими добиваниями к 10-й минуте (lh_t[11]; без парсинга — итоговые добивания);
 // из них 5 — на лёгкой линии, 4 — на сложной (иначе 5 — с меньшим GPM). Коры — по линии: лёгкая 1, мид 2, сложная 3.
 const POS_MATCHES = 5000; // свежие матчи периода: иначе на длинном патче запрос не укладывается в 15 с
+// подзапрос «последние POS_MATCHES про-матчей периода» — для всех тяжёлых запросов
+const recentM = (cols='match_id, radiant_win') => `(SELECT ${cols} FROM matches WHERE start_time BETWEEN ${periodStart()} AND ${periodEnd()} ORDER BY match_id DESC LIMIT ${POS_MATCHES})`;
 function posCTE(extraWhere=''){
   return `WITH b AS (
       SELECT pm.match_id, pm.hero_id, pm.player_slot, (pm.player_slot<128) rad, ((pm.player_slot<128)=m.radiant_win)::int win,
@@ -435,8 +437,8 @@ async function loadPeriod(force=false){
   {
     const settled = await Promise.allSettled([
       sql(`SELECT pm.hero_id, count(*) n, sum(((pm.player_slot<128)=m.radiant_win)::int) w
-           FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
-           WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} GROUP BY 1`, !force),
+           FROM ${recentM()} m JOIN player_matches pm ON pm.match_id=m.match_id
+           GROUP BY 1`, !force),
       sql(`${posCTE()}
            SELECT c.hero_id carry, s.hero_id sup, count(*) n, sum(c.win) w
            FROM pp c JOIN pp s ON s.match_id=c.match_id AND s.rad=c.rad
@@ -456,7 +458,7 @@ async function loadPeriod(force=false){
     S.duos45 = null; S.wards = {}; S.posAvg = null;
     const nm = totals[0] ? totals[0].n : '?';
     const from = new Date(st*1000).toLocaleDateString('ru-RU') + (S.end ? ' по '+new Date(S.end*1000).toLocaleDateString('ru-RU') : '');
-    $('patchInfo').innerHTML = `Патч <b>${esc(S.patch.name)}</b> · про-матчей в выборке: <b>${nm}</b> · с ${from} · обновлено ${new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}`;
+    $('patchInfo').innerHTML = `Патч <b>${esc(S.patch.name)}</b> · про-матчей: <b>${nm}</b>${+nm>POS_MATCHES?` (статистика по последним ${POS_MATCHES})`:''} · с ${from} · обновлено ${new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}`;
     if(fails.length===settled.length){ showErr(fails[0]); $('duoList').innerHTML=''; $('heroTable').innerHTML=''; return; }
     $('globalErr').innerHTML = S.constFallback ? '<div class="small" style="margin-bottom:8px">Справочники героев и предметов загружены с запасного сервера (GitHub) — основной сервер OpenDota отвечает с перебоями.</div>' : '';
     if(fails.length) showErr(fails[0], false);
@@ -560,12 +562,12 @@ function itemTile(r, extra=''){
 
 const heroItemRows = (id, st) => sql(`SELECT x.k, count(*) n, sum(x.win) w, avg(x.t)::int t, sum((x.t<=0)::int) s FROM (
                SELECT p.match_id, e->>'key' k, min((e->>'time')::int) t, max(((p.player_slot<128)=m.radiant_win)::int) win
-               FROM player_matches p JOIN matches m ON m.match_id=p.match_id
+               FROM ${recentM()} m JOIN player_matches p ON p.match_id=m.match_id
                CROSS JOIN LATERAL unnest(p.purchase_log) e
-               WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} AND p.hero_id=${id} GROUP BY 1,2) x
+               WHERE p.hero_id=${id} GROUP BY 1,2) x
              GROUP BY 1 ORDER BY n DESC LIMIT 120`);
-const heroItemBase = (id, st) => sql(`SELECT count(*) n, sum(((p.player_slot<128)=m.radiant_win)::int) w FROM player_matches p JOIN matches m ON m.match_id=p.match_id
-             WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} AND p.hero_id=${id} AND p.purchase_log IS NOT NULL`);
+const heroItemBase = (id, st) => sql(`SELECT count(*) n, sum(((p.player_slot<128)=m.radiant_win)::int) w FROM ${recentM()} m JOIN player_matches p ON p.match_id=m.match_id
+             WHERE p.hero_id=${id} AND p.purchase_log IS NOT NULL`);
 let buildToken=0;
 async function loadBuild(){
   const id=+$('buildHero').value; if(!id){ $('buildOut').innerHTML='<div class="msg">Выбери героя</div>'; return; }
@@ -584,10 +586,10 @@ async function loadBuild(){
       [rows, base] = await Promise.all([
         sql(`SELECT it AS id, count(*) n, sum(win) w FROM (
                SELECT unnest(ARRAY[p.item_0,p.item_1,p.item_2,p.item_3,p.item_4,p.item_5]) it, ((p.player_slot<128)=m.radiant_win)::int win
-               FROM player_matches p JOIN matches m ON m.match_id=p.match_id WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} AND p.hero_id=${id}) x
+               FROM ${recentM()} m JOIN player_matches p ON p.match_id=m.match_id WHERE p.hero_id=${id}) x
              WHERE it>0 GROUP BY 1 ORDER BY n DESC LIMIT 80`),
-        sql(`SELECT count(*) n, sum(((p.player_slot<128)=m.radiant_win)::int) w FROM player_matches p JOIN matches m ON m.match_id=p.match_id
-             WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} AND p.hero_id=${id}`)
+        sql(`SELECT count(*) n, sum(((p.player_slot<128)=m.radiant_win)::int) w FROM ${recentM()} m JOIN player_matches p ON p.match_id=m.match_id
+             WHERE p.hero_id=${id}`)
       ]);
       rows = rows.map(r=>({k:S.itemById[r.id], n:r.n, w:r.w, t:null, s:0})).filter(r=>r.k);
     }

@@ -25,7 +25,7 @@
 - Связки и сборки считаются SQL через `/explorer?sql=` (только про-матчи; паб-данных по связкам у OpenDota нет).
 - Константы героев/предметов: `/constants/heroes`, `/constants/items`; картинки с `cdn.cloudflare.steamstatic.com`.
 - Кэш ответов в localStorage на 1 час.
-- Устойчивость: `fetchRetry` повторяет при 429/5xx/сетевой ошибке; константы (`getConst`) при отказе OpenDota берутся с `raw.githubusercontent.com/odota/dotaconstants/master/build/<name>.json` (CORS есть); `loadPeriod` — `Promise.allSettled`, падение одного запроса не роняет страницу; `errHint()` объясняет причину (сеть/лимит 429/таймаут 15 с/5xx). Тяжёлый `posCTE` ограничен последними 5000 матчами периода (`POS_MATCHES`).
+- Устойчивость: `fetchRetry` повторяет при 429/5xx/сетевой ошибке; константы (`getConst`) при отказе OpenDota берутся с `raw.githubusercontent.com/odota/dotaconstants/master/build/<name>.json` (CORS есть); `loadPeriod` — `Promise.allSettled`, падение одного запроса не роняет страницу; `errHint()` объясняет причину (сеть/лимит 429/таймаут 15 с/5xx). Все тяжёлые запросы (позиции, герои патча, сборки) идут по последним 5000 матчам периода: подзапрос `recentM()` / `POS_MATCHES` — патч 7.41 длился 8 месяцев, и запросы «по всему патчу» не укладывались в 15 с.
 
 ## Важно
 - Внутри inline `<script>` нельзя писать строку `</script>` даже в шаблонах — обрывает весь скрипт.
