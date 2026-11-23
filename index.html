@@ -269,7 +269,7 @@ td img{width:40px;height:23px;object-fit:cover;border-radius:3px;vertical-align:
   <div class="note">
     Данные: OpenDota (про-матчи выбранного патча; паблик-винрейт — ранги Divine/Immortal за последние дни).
     Связка = керри (позиция 1) и 5-ка одной команды. «Надёжный винрейт» — нижняя граница доверительного интервала, он не даёт связкам с 6 играми и 100% подняться наверх.
-    Позиции: саппорты — двое в команде с наименьшими добиваниями к 10-й минуте; из них 5 — стоявший на лёгкой линии, 4 — на сложной. Коры — по линии: лёгкая — 1, мид — 2, сложная — 3.
+    Связки и средние по позициям считаются по последним 5000 про-матчам периода. Позиции: саппорты — двое в команде с наименьшими добиваниями к 10-й минуте; из них 5 — стоявший на лёгкой линии, 4 — на сложной. Коры — по линии: лёгкая — 1, мид — 2, сложная — 3.
     Варды: позиции из логов установки в про-матчах (последние 2000 матчей периода). Соседние точки объединяются в «центряк» — средневзвешенный центр популярного места; цифра на кружке — его место в топе.
     «Синергия» — насколько винрейт связки выше среднего винрейта этих героев по отдельности.
     Винрейт предметов завышен у поздних слотов (их чаще собирают в выигранных играх), поэтому лучшая сборка выбирается среди популярных предметов, а не только по винрейту.
@@ -294,17 +294,40 @@ const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 function cacheGet(k){ try{ const v=JSON.parse(localStorage.getItem('dm_'+k)); if(v && Date.now()-v.t < 3600e3) return v.d; }catch(e){} return null; }
 function cacheSet(k,d){ try{ localStorage.setItem('dm_'+k, JSON.stringify({t:Date.now(),d})); }catch(e){} }
 
+async function fetchRetry(url, tries=2){
+  for(let i=0;;i++){
+    try{
+      const r = await fetch(url);
+      if((r.status===429 || r.status>=500) && i<tries-1){ await new Promise(res=>setTimeout(res, 1500*(i+1))); continue; }
+      return r;
+    }catch(e){ if(i>=tries-1) throw e; await new Promise(res=>setTimeout(res, 1500*(i+1))); }
+  }
+}
 async function getJSON(path, useCache=true){
   if(useCache){ const c=cacheGet(path); if(c) return c; }
-  const r = await fetch(API+path);
+  let r;
+  try{ r = await fetchRetry(API+path); }
+  catch(e){ const err=new Error('нет связи с api.opendota.com'); err.network=true; throw err; }
   if(!r.ok){
     let detail=''; try{ const b=await r.json(); detail = b && (b.err||b.error) ? ': '+(b.err||b.error) : ''; }catch(e){}
-    if(/timeout|canceling statement/i.test(detail)) detail=': запрос не уложился в 15 секунд — выбери период «Последние 30 дней»';
+    if(/timeout|canceling statement/i.test(detail)) detail=': запрос не уложился в 15 секунд';
     throw new Error('OpenDota ответил '+r.status+(r.status==429?' (лимит запросов, подожди минуту)':detail));
   }
   const d = await r.json();
   if(useCache) cacheSet(path,d);
   return d;
+}
+const RAW_CONST = 'https://raw.githubusercontent.com/odota/dotaconstants/master/build/';
+async function getConst(name, useCache=true){
+  try{ return await getJSON('constants/'+name, useCache); }
+  catch(e){
+    const c = useCache && cacheGet('raw_'+name); if(c) return c;
+    const r = await fetch(RAW_CONST+name+'.json').catch(()=>null);
+    if(!r || !r.ok) throw e;
+    const d = await r.json(); S.constFallback = true;
+    if(useCache) cacheSet('raw_'+name, d);
+    return d;
+  }
 }
 async function sql(q, useCache=true){
   const d = await getJSON('explorer?sql='+encodeURIComponent(q.replace(/\s+/g,' ').trim()), useCache);
@@ -340,14 +363,16 @@ const MIN_PATCH_MATCHES = 400;
 // CTE «pp»: игроки про-матчей выбранного периода с позицией 1–5.
 // Саппорты — двое с наименьшими добиваниями к 10-й минуте (lh_t[11]; без парсинга — итоговые добивания);
 // из них 5 — на лёгкой линии, 4 — на сложной (иначе 5 — с меньшим GPM). Коры — по линии: лёгкая 1, мид 2, сложная 3.
+const POS_MATCHES = 5000; // свежие матчи периода: иначе на длинном патче запрос не укладывается в 15 с
 function posCTE(extraWhere=''){
   return `WITH b AS (
       SELECT pm.match_id, pm.hero_id, pm.player_slot, (pm.player_slot<128) rad, ((pm.player_slot<128)=m.radiant_win)::int win,
              pm.lane_role, pm.gold_per_min, pm.deaths, m.duration, pm.obs_log IS NOT NULL parsed,
              coalesce(cardinality(pm.obs_log),0) o, coalesce(cardinality(pm.sen_log),0) s, coalesce(pm.lh_t[11], pm.last_hits, 0) lh,
              row_number() OVER (PARTITION BY pm.match_id, (pm.player_slot<128) ORDER BY coalesce(pm.lh_t[11], pm.last_hits, 0) ASC, pm.gold_per_min ASC, pm.player_slot) farm
-      FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
-      WHERE m.start_time BETWEEN ${periodStart()} AND ${periodEnd()} ${extraWhere}),
+      FROM (SELECT match_id, radiant_win, duration FROM matches WHERE start_time BETWEEN ${periodStart()} AND ${periodEnd()} ORDER BY match_id DESC LIMIT ${POS_MATCHES}) m
+      JOIN player_matches pm ON pm.match_id=m.match_id
+      WHERE true ${extraWhere}),
     pp AS (
       SELECT b.*, CASE WHEN farm<=2
           THEN 6 - row_number() OVER (PARTITION BY match_id, rad, farm<=2 ORDER BY CASE lane_role WHEN 1 THEN 0 WHEN 3 THEN 2 ELSE 1 END, gold_per_min ASC, player_slot)
@@ -361,7 +386,7 @@ async function init(force=false){
   $('globalErr').innerHTML='';
   try{
     const [patches, heroes, items] = await Promise.all([
-      getJSON('constants/patch', false), getJSON('constants/heroes', !force), getJSON('constants/items', !force)]);
+      getConst('patch', false), getConst('heroes', !force), getConst('items', !force)]);
     S.patches = patches.filter(p=>p && p.date && p.name);
     fillPatchSelect();
     const lastI=S.patches.length-1;
@@ -388,19 +413,27 @@ async function init(force=false){
   }
 }
 
-function showErr(e){
-  const blocked = e instanceof TypeError;
-  $('globalErr').innerHTML = '<div class="err"><b>Не удалось загрузить данные.</b> '+esc(e.message)+
-    (blocked ? '<br>Похоже, браузер не пускает запросы к api.opendota.com. Открой этот файл в обычном браузере (Chrome, Firefox, Edge) с доступом в интернет, а не во встроенном предпросмотре.' : '')+'</div>';
-  $('patchInfo').textContent = 'Данные не загружены';
+function errHint(e){
+  if(e && (e.network || e instanceof TypeError))
+    return 'Сервер статистики OpenDota (api.opendota.com) сейчас не отвечает или недоступен из твоей сети. Дело не в браузере. Что можно сделать: подождать 10–30 минут и нажать «Обновить данные»; попробовать другую сеть (мобильный интернет вместо Wi-Fi или наоборот) или VPN. Проверить сам сервер: открой <a href="https://api.opendota.com/api/constants/patch" target="_blank" rel="noopener">эту ссылку</a> — если там не текст с патчами, OpenDota недоступна.';
+  if(/429/.test(e && e.message)) return 'OpenDota ограничивает число запросов (примерно 60 в минуту и ~2000 в день с одного адреса). Подожди пару минут и нажми «Обновить данные».';
+  if(/15 секунд|timeout/i.test(e && e.message)) return 'Сервер OpenDota перегружен и не успел посчитать статистику. Выбери период «Последние 30 дней» или попробуй позже.';
+  if(/ответил 5\d\d/.test(e && e.message)) return 'У OpenDota временный сбой. Попробуй через несколько минут.';
+  return '';
+}
+function showErr(e, fatal=true){
+  const h=errHint(e);
+  $('globalErr').innerHTML = '<div class="err"><b>'+(fatal?'Не удалось загрузить данные.':'Часть данных не загрузилась.')+'</b> '+esc(e.message)+(h?'<br>'+h:'')+
+    '<br><button class="btn sec" style="margin-top:8px" onclick="init(true)">Попробовать ещё раз</button></div>';
+  if(fatal) $('patchInfo').innerHTML = S.patch ? `Патч <b>${esc(S.patch.name)}</b> · статистика OpenDota сейчас недоступна (вкладка «Изменения патча» работает)` : 'Данные не загружены';
 }
 
 async function loadPeriod(force=false){
   const st = periodStart();
   $('duoList').innerHTML='<div class="msg"><span class="spin"></span>Считаю связки по про-матчам…</div>';
   $('heroTable').innerHTML='<tr><td class="msg"><span class="spin"></span>Загрузка…</td></tr>';
-  try{
-    const [heroPro, duos, totals, heroStats] = await Promise.all([
+  {
+    const settled = await Promise.allSettled([
       sql(`SELECT pm.hero_id, count(*) n, sum(((pm.player_slot<128)=m.radiant_win)::int) w
            FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id
            WHERE m.start_time BETWEEN ${st} AND ${periodEnd()} GROUP BY 1`, !force),
@@ -410,22 +443,29 @@ async function loadPeriod(force=false){
            WHERE c.pos=1 AND s.pos=5
            GROUP BY 1,2 HAVING count(*)>=3 ORDER BY n DESC LIMIT 1500`, !force),
       sql(`SELECT count(*) n FROM matches WHERE start_time BETWEEN ${st} AND ${periodEnd()}`, !force),
-      S.heroStats ? Promise.resolve(S.heroStats) : getJSON('heroStats', !force).catch(()=>null)
+      S.heroStats ? Promise.resolve(S.heroStats) : getJSON('heroStats', !force)
     ]);
+    const val = i => settled[i].status==='fulfilled' ? settled[i].value : null;
+    const fails = settled.filter(x=>x.status==='rejected').map(x=>x.reason);
+    const [heroPro, duos, totals, heroStats] = [val(0)||[], val(1), val(2)||[], val(3)];
     S.heroStats = heroStats;
     S.pubWR = {};
     if(heroStats) heroStats.forEach(h=>{ const p=(h['7_pick']||0)+(h['8_pick']||0), w=(h['7_win']||0)+(h['8_win']||0); S.pubWR[h.id]={n:p,w}; });
     S.heroPro = {}; heroPro.forEach(r=>S.heroPro[r.hero_id]={n:+r.n,w:+r.w});
-    S.duos = duos.map(r=>({carry:r.carry, sup:r.sup, n:+r.n, w:+r.w}));
+    S.duos = duos ? duos.map(r=>({carry:r.carry, sup:r.sup, n:+r.n, w:+r.w})) : null;
     S.duos45 = null; S.wards = {}; S.posAvg = null;
     const nm = totals[0] ? totals[0].n : '?';
     const from = new Date(st*1000).toLocaleDateString('ru-RU') + (S.end ? ' по '+new Date(S.end*1000).toLocaleDateString('ru-RU') : '');
     $('patchInfo').innerHTML = `Патч <b>${esc(S.patch.name)}</b> · про-матчей в выборке: <b>${nm}</b> · с ${from} · обновлено ${new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}`;
-    renderDuos(); renderHeroes();
+    if(fails.length===settled.length){ showErr(fails[0]); $('duoList').innerHTML=''; $('heroTable').innerHTML=''; return; }
+    $('globalErr').innerHTML = S.constFallback ? '<div class="small" style="margin-bottom:8px">Справочники героев и предметов загружены с запасного сервера (GitHub) — основной сервер OpenDota отвечает с перебоями.</div>' : '';
+    if(fails.length) showErr(fails[0], false);
+    if(duos) renderDuos(); else if(settled[1].status==='rejected') $('duoList').innerHTML='<div class="err">Связки не посчитались: '+esc(settled[1].reason.message)+(errHint(settled[1].reason)?'<br>'+errHint(settled[1].reason):'')+'</div>';
+    renderHeroes();
     if($('duoMode').value==='ss') loadDuos45(force);
     if(!$('tab-wards').hidden) loadWards(force);
     if($('buildHero').value) loadBuild();
-  }catch(e){ showErr(e); $('duoList').innerHTML=''; $('heroTable').innerHTML=''; }
+  }
 }
 
 // ---------- duos ----------
@@ -1333,7 +1373,7 @@ function loadNotes(){
   if(PN.notes) return Promise.resolve(PN.notes);
   if(PN.pending) return PN.pending;
   PN.pending = (async()=>{
-    const [notes, abil] = await Promise.all([ getJSON('constants/patchnotes', false), getJSON('constants/abilities', false).catch(()=>null) ]);
+    const [notes, abil] = await Promise.all([ getConst('patchnotes', false), getConst('abilities', false).catch(()=>null) ]);
     PN.notes=notes; PN.abil=abil; return notes;
   })();
   PN.pending.catch(()=>{}).finally(()=>{ PN.pending=null; });
